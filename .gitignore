@@ -1,0 +1,5 @@
+# 编译产物，不需要提交
+out/
+out-test/
+gomoku-server.jar
+*.class

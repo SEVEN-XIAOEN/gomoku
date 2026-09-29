@@ -1,0 +1,13 @@
+# Render 平台的部署配置。把仓库连到 Render 后，它会自动读取这个文件。
+# 其它平台（Railway、Fly.io 等）如果支持 Dockerfile，也一样能直接部署。
+services:
+  - type: web
+    name: gomoku-java
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8080

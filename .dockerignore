@@ -1,0 +1,7 @@
+# 构建镜像时不需要这些文件
+out/
+out-test/
+gomoku-server.jar
+*.class
+*.md
+.git/

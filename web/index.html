@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>网页五子棋</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+    <header class="app__header">
+        <h1 class="app__title">五子棋</h1>
+        <p class="app__subtitle">你执黑先行 · 电脑执白 · 先连成五子者获胜</p>
+    </header>
+
+    <section class="toolbar">
+        <label class="field" for="size">
+            <span class="field__label">棋盘大小</span>
+            <select id="size" class="field__input">
+                <option value="9">9 × 9</option>
+                <option value="13">13 × 13</option>
+                <option value="15" selected>15 × 15</option>
+            </select>
+        </label>
+
+        <label class="field" for="difficulty">
+            <span class="field__label">电脑难度</span>
+            <select id="difficulty" class="field__input">
+                <option value="1">简单</option>
+                <option value="2" selected>普通</option>
+                <option value="3">困难</option>
+            </select>
+        </label>
+
+        <div class="toolbar__buttons">
+            <button id="new-game" class="btn btn--primary" type="button">新对局</button>
+            <button id="undo" class="btn" type="button">悔棋</button>
+        </div>
+    </section>
+
+    <div class="app__body">
+        <section class="board-wrap">
+            <canvas id="board" class="board" width="600" height="600"
+                    aria-label="五子棋棋盘"></canvas>
+            <div class="board-overlay" id="overlay" hidden>
+                <div class="spinner" aria-hidden="true"></div>
+                <span class="board-overlay__text" id="overlay-text">电脑思考中…</span>
+            </div>
+        </section>
+
+        <aside class="panel">
+            <div class="panel__section status">
+                <p class="status__message" id="message">正在连接服务器…</p>
+                <dl class="stats">
+                    <div class="stat">
+                        <dt>已下</dt>
+                        <dd><span id="moves">0</span> 手</dd>
+                    </div>
+                    <div class="stat">
+                        <dt>电脑用时</dt>
+                        <dd id="ai-millis">0 ms</dd>
+                    </div>
+                </dl>
+            </div>
+
+            <ul class="legend">
+                <li class="legend__item">
+                    <span class="stone stone--black" aria-hidden="true"></span>你（黑棋）
+                </li>
+                <li class="legend__item">
+                    <span class="stone stone--white" aria-hidden="true"></span>电脑（白棋）
+                </li>
+            </ul>
+
+            <p class="hint">
+                点击棋盘交叉点落子，鼠标悬停会显示预览。<br>
+                下错了可以点「悔棋」，会同时撤销你和电脑的最近一手。
+            </p>
+        </aside>
+    </div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
