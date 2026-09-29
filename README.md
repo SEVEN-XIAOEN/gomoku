@@ -127,6 +127,8 @@ gomoku/
 
 这是 Java 后端项目，不能直接扔到 GitHub Pages 或 Vercel（那些只能放静态页面）。需要能跑 Java 的平台，好在项目已经带了 `Dockerfile`，主流平台都能一键部署。
 
+> 手把手的完整步骤（建仓库、推送、Render 部署、排错）见 [DEPLOY.md](DEPLOY.md)。
+
 ### 步骤
 
 1. 把 `gomoku` 目录提交到 GitHub 仓库。
