@@ -35,6 +35,11 @@ set "PROXY_PORT=7897"
 rem Force device-code login so we do not depend on a browser popup.
 set "GCM_GITHUB_AUTHMODES=device"
 
+rem Git Credential Manager is a .NET app with its own HTTP stack,
+rem so it needs the proxy too, otherwise it cannot reach github.com.
+set "HTTP_PROXY=http://127.0.0.1:%PROXY_PORT%"
+set "HTTPS_PROXY=http://127.0.0.1:%PROXY_PORT%"
+
 echo.
 echo [1/3] Configuring proxy and login mode ...
 git config --local http.proxy  http://127.0.0.1:%PROXY_PORT%
