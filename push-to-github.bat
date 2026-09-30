@@ -2,6 +2,27 @@
 setlocal
 cd /d "%~dp0"
 
+rem ------------------------------------------------------------------
+rem  Git refuses to touch a repository whose owner is a different account:
+rem      fatal: detected dubious ownership in repository at '...'
+rem  This project may have been created by another account (a sandbox),
+rem  so whitelist this exact path once for the current user.
+rem ------------------------------------------------------------------
+set "REPO_DIR=%CD:\=/%"
+git config --global --get-all safe.directory 2>nul | findstr /l /i /c:"%REPO_DIR%" >nul 2>&1
+if errorlevel 1 (
+    git config --global --add safe.directory "%REPO_DIR%"
+    if errorlevel 1 (
+        echo.
+        echo WARNING: could not add the safe.directory exception automatically.
+        echo If the push fails with "dubious ownership", run this by hand:
+        echo     git config --global --add safe.directory "%REPO_DIR%"
+        echo.
+    ) else (
+        echo Added git safe.directory exception for %REPO_DIR%
+    )
+)
+
 rem ===================================================================
 rem  Push this project to your GitHub repository.
 rem
