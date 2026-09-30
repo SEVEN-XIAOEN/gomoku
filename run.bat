@@ -1,21 +1,20 @@
 @echo off
-chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
-rem 没有 jar 就先自动构建一次
+rem Build automatically the first time
 if not exist gomoku-server.jar (
-    echo 还没有构建过，先执行 build.bat ...
+    echo Jar not found, running build.bat first ...
     call build.bat
     if errorlevel 1 exit /b 1
 )
 
 echo.
-echo 服务启动后，请在浏览器打开： http://localhost:8080
-echo 按 Ctrl + C 停止服务
+echo Open your browser at : http://localhost:8080
+echo Press Ctrl + C to stop the server.
 echo.
 
-rem 后面的参数会传给程序，例如 run.bat 9000 表示改用 9000 端口
+rem Extra arguments are passed through, e.g.  run.bat 9000
 java -jar gomoku-server.jar %*
 
 endlocal

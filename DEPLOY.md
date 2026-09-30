@@ -39,9 +39,19 @@ push-to-github.bat 你的GitHub用户名 gomoku
 push-to-github.bat zhangsan gomoku
 ```
 
-脚本会做四件事：给本项目单独配置 Clash 代理（不改你的全局 git 设置）、关联远程仓库、测试连通性、推送代码。首次推送会**弹出浏览器窗口**，登录你的 GitHub 账号并授权即可（用的是你机器上自带的 Git 凭据管理器，密码不会经过我）。
+脚本会做三件事：给本项目单独配置 Clash 代理和 TLS 后端（只影响这个仓库，不改你的全局 git 设置）、关联远程仓库、推送代码。
 
-> 如果你改了 Clash 的混合端口，打开 `push-to-github.bat` 改掉 `PROXY_PORT` 那一行，或者直接告诉我。
+首次推送会要求登录，用的是**设备码方式**（不依赖浏览器弹窗，因为有些机器没有注册默认浏览器）：
+
+1. 终端会打印一串验证码，形如 `XXXX-XXXX`
+2. 打开 <https://github.com/login/device>
+3. 输入验证码，点 Continue，再点 Authorize
+
+授权一次之后就不用再登了（凭据保存在本机加密文件里，密码不经过我）。
+
+> 如果你改了 Clash 的混合端口，打开 `push-to-github.bat` 改掉 `PROXY_PORT` 那一行。
+>
+> 脚本里的提示文字全部是英文的，这是故意的：Windows 批处理文件里出现中文，在非 UTF-8 代码页下会被 `cmd.exe` 截断，导致莫名其妙的「不是内部或外部命令」报错。中文说明只放在本文档里。
 
 ### 如果不想用脚本，手动执行也行
 
@@ -49,6 +59,7 @@ push-to-github.bat zhangsan gomoku
 cd E:\codexTest\JAVA\gomoku
 git config --local http.proxy  http://127.0.0.1:7897
 git config --local https.proxy http://127.0.0.1:7897
+git config --local http.sslBackend openssl
 git remote add origin https://github.com/你的用户名/gomoku.git
 git push -u origin main
 ```
@@ -127,8 +138,25 @@ Render 检测到推送会**自动重新部署**，几分钟后新版本就上线
 | 现象 | 原因和处理 |
 | --- | --- |
 | `Connection was reset` | 没走代理。确认 Clash 开着，端口是 7897 |
+| `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS` | Windows 的 TLS 后端不可用。脚本里已经加了 `git config --local http.sslBackend openssl` 来解决；手动执行时也别忘了这一行 |
 | `Repository not found` | 仓库没建，或用户名/仓库名写错 |
 | 推送时反复要密码 | 在 GitHub 生成 Personal Access Token 当密码用；或在凭据管理器里重新登录 |
+| 中文提示变成乱码或报「不是内部或外部命令」 | 批处理文件被存成了 UTF-8。本项目的脚本刻意只用英文，避免这个问题 |
 | 部署成功但页面 404 | `Dockerfile` 里的 `COPY web ./web` 没生效，检查仓库里 `web` 目录是否推上去了 |
 | 页面能开但操作无反应 | 后端接口报错，去 Render 的 Logs 看堆栈 |
 | 打开很慢 | 免费档休眠后唤醒，等半分钟；或把 Region 改成 Singapore |
+
+## 本地跑起来（不想上线时）
+
+```bat
+cd E:\codexTest\JAVA\gomoku
+run.bat
+```
+
+浏览器打开 <http://localhost:8080> 。注意 `localhost` 只有你自己这台电脑能访问，别人打不开；同一个 WiFi 下的手机可以用 `http://你的内网IP:8080`。
+
+构建脚本在服务运行时无法覆盖 jar 文件（Windows 会锁住），`build.bat` 会检测到并提示你先停服务：
+
+```bat
+taskkill /IM java.exe /F
+```

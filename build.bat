@@ -1,29 +1,44 @@
 @echo off
-chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
-echo [1/3] 清理旧的编译结果...
+echo [1/3] Cleaning previous build ...
 if exist out rmdir /s /q out
 mkdir out
 
-echo [2/3] 编译 Java 源码...
+rem Fail fast if a running server still holds the old jar open.
+rem Windows locks the jar file, so packaging would fail halfway through.
+if exist gomoku-server.jar (
+    ren gomoku-server.jar gomoku-server.jar.lockcheck >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo ==========================================================
+        echo  gomoku-server.jar is in use by a running server.
+        echo  Stop the server first, then run build.bat again.
+        echo  Stop with:  taskkill /IM java.exe /F
+        echo ==========================================================
+        exit /b 1
+    )
+    ren gomoku-server.jar.lockcheck gomoku-server.jar >nul 2>&1
+)
+
+echo [2/3] Compiling Java sources ...
 javac -encoding UTF-8 -d out src\*.java
 if errorlevel 1 (
     echo.
-    echo 编译失败，请检查上面的错误信息。
+    echo Build failed. Check the errors above.
     exit /b 1
 )
 
-echo [3/3] 打包成可执行 jar...
+echo [3/3] Packaging runnable jar ...
 jar --create --file gomoku-server.jar --main-class GomokuServer -C out .
 if errorlevel 1 (
     echo.
-    echo 打包失败。
+    echo Packaging failed.
     exit /b 1
 )
 
 echo.
-echo 构建完成：gomoku-server.jar
-echo 运行方式：run.bat   或者   java -jar gomoku-server.jar
+echo Build OK : gomoku-server.jar
+echo Run it   : run.bat    or    java -jar gomoku-server.jar
 endlocal

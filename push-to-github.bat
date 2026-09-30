@@ -1,19 +1,27 @@
 @echo off
-chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
 rem ===================================================================
-rem 把本项目推送到你的 GitHub 仓库。
-rem 用法（先到 GitHub 网站上建一个空仓库，不要勾选 README）：
-rem     push-to-github.bat 你的GitHub用户名 仓库名
-rem 例如：
-rem     push-to-github.bat zhangsan gomoku
+rem  Push this project to your GitHub repository.
+rem
+rem  Usage (create an EMPTY repo on GitHub first, do not add a README):
+rem      push-to-github.bat YOUR_GITHUB_USERNAME [REPO_NAME]
+rem  Example:
+rem      push-to-github.bat zhangsan gomoku
+rem
+rem  YOUR_GITHUB_USERNAME is the part after github.com/ in your repo URL.
+rem  This script is kept ASCII-only on purpose: batch files with non-ASCII
+rem  text get mangled by cmd.exe on non-UTF8 code pages.
 rem ===================================================================
 
 if "%~1"=="" (
-    echo 用法：push-to-github.bat 你的GitHub用户名 仓库名
-    echo 例如：push-to-github.bat zhangsan gomoku
+    echo.
+    echo Usage  : push-to-github.bat YOUR_GITHUB_USERNAME [REPO_NAME]
+    echo Example: push-to-github.bat zhangsan gomoku
+    echo.
+    echo The username is the part after github.com/ in your repo URL.
+    echo.
     exit /b 1
 )
 
@@ -21,37 +29,49 @@ set "GH_USER=%~1"
 set "GH_REPO=%~2"
 if "%GH_REPO%"=="" set "GH_REPO=gomoku"
 
-rem 本机的 Clash 混合代理端口。如果以后改了，改这一行即可。
+rem Clash mixed proxy port. Change this line if your port is different.
 set "PROXY_PORT=7897"
 
-echo [1/4] 临时给 git 配置代理 127.0.0.1:%PROXY_PORT%（只对本项目生效，不影响全局设置）...
+rem Force device-code login so we do not depend on a browser popup.
+set "GCM_GITHUB_AUTHMODES=device"
+
+echo.
+echo [1/3] Configuring proxy and login mode ...
 git config --local http.proxy  http://127.0.0.1:%PROXY_PORT%
 git config --local https.proxy http://127.0.0.1:%PROXY_PORT%
+rem Use git's bundled OpenSSL instead of Windows schannel.
+rem schannel often fails behind a proxy with:
+rem   "schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS"
+git config --local http.sslBackend openssl
+git config --local credential.credentialStore dpapi
+git config --local credential.gitHubAuthModes device
+echo      proxy port %PROXY_PORT%, login mode: device code
 
-echo [2/4] 关联远程仓库 github.com/%GH_USER%/%GH_REPO%.git ...
+echo.
+echo [2/3] Setting remote origin ...
 git remote remove origin >nul 2>&1
 git remote add origin https://github.com/%GH_USER%/%GH_REPO%.git
+git remote -v
 
-echo [3/4] 测试连通性...
-git ls-remote --heads origin >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo 连不上远程仓库。常见原因：
-    echo   1. 仓库还没在 GitHub 上创建
-    echo   2. 用户名或仓库名写错了
-    echo   3. Clash 没开，或者混合端口不是 %PROXY_PORT%
-    exit /b 1
-)
-
-echo [4/4] 推送代码（首次会弹出浏览器，请登录 GitHub 账号）...
+echo.
+echo [3/3] Pushing to GitHub ...
+echo.
+echo      If it asks you to sign in, open https://github.com/login/device
+echo      and type in the code printed below.
+echo.
 git push -u origin main
+
 if errorlevel 1 (
     echo.
-    echo 推送失败，请把上面的报错发给我。
+    echo ==========================================================
+    echo  PUSH FAILED
+    echo  Copy the git error above and send it to me.
+    echo ==========================================================
     exit /b 1
 )
 
 echo.
-echo 推送成功！仓库地址： https://github.com/%GH_USER%/%GH_REPO%
-echo 接下来去 https://render.com 连接这个仓库，即可自动部署。
+echo Done. Repository: https://github.com/%GH_USER%/%GH_REPO%
+echo Next step: open https://dashboard.render.com and deploy it.
+echo.
 endlocal
