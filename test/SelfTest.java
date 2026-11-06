@@ -23,6 +23,11 @@ public class SelfTest {
         testAiTakesImmediateWin();
         testAiBlocksFourInARow();
         testAiMovesNextToExistingStone();
+        testPvpAssignsColors();
+        testPvpRejectsOutOfTurn();
+        testPvpDetectsWin();
+        testPvpUndoOwnLastMove();
+        testPvpRejectsThirdPlayer();
 
         System.out.println();
         System.out.println("通过 " + passed + " 项，失败 " + failed + " 项");
@@ -120,6 +125,56 @@ public class SelfTest {
         check("AI 落子贴近已有棋子（切比雪夫距离 <= 2）", board.isEmpty(move[0], move[1]) && distance <= 2);
     }
 
+    // ------------------------------------------------------------------ 双人联机
+
+    private static void testPvpAssignsColors() {
+        PvpRoom room = new PvpRoom("ABC123", 15);
+        room.join("black-player");
+        room.join("white-player");
+        check("先加入房间的人执黑，后加入的人执白",
+                room.colorOf("black-player") == Board.BLACK
+                        && room.colorOf("white-player") == Board.WHITE);
+    }
+
+    private static void testPvpRejectsOutOfTurn() {
+        PvpRoom room = new PvpRoom("ABC123", 15);
+        room.join("black-player");
+        room.join("white-player");
+        check("双人模式不能替对手落子",
+                throwsIllegalArgument(() -> room.move("white-player", 7, 7)));
+    }
+
+    private static void testPvpDetectsWin() {
+        PvpRoom room = new PvpRoom("ABC123", 15);
+        room.join("black-player");
+        room.join("white-player");
+        for (int c = 3; c <= 6; c++) {
+            room.move("black-player", 7, c);
+            room.move("white-player", 0, c - 3);
+        }
+        room.move("black-player", 7, 7);
+        String json = room.toJson("black-player");
+        check("双人模式能判定五连获胜", json.contains("\"status\":\"black_win\""));
+    }
+
+    private static void testPvpUndoOwnLastMove() {
+        PvpRoom room = new PvpRoom("ABC123", 15);
+        room.join("black-player");
+        room.join("white-player");
+        room.move("black-player", 7, 7);
+        room.undo("black-player");
+        String json = room.toJson("black-player");
+        check("双人模式可以撤回自己刚下的最后一手",
+                json.contains("\"moves\":0") && json.contains("\"turn\":1"));
+    }
+
+    private static void testPvpRejectsThirdPlayer() {
+        PvpRoom room = new PvpRoom("ABC123", 15);
+        room.join("black-player");
+        room.join("white-player");
+        check("双人房间满员后拒绝第三名玩家", !room.join("third-player"));
+    }
+
     // ------------------------------------------------------------------ 小工具
 
     private static void check(String name, boolean ok) {
@@ -129,6 +184,15 @@ public class SelfTest {
         } else {
             failed++;
             System.out.println("[失败] " + name);
+        }
+    }
+
+    private static boolean throwsIllegalArgument(Runnable action) {
+        try {
+            action.run();
+            return false;
+        } catch (IllegalArgumentException e) {
+            return true;
         }
     }
 }

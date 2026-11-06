@@ -1,9 +1,9 @@
 # 网页五子棋（Java 案例）
 
-一个用 **纯 Java（零第三方依赖）** 写后端、用原生 HTML/CSS/JavaScript 写前端的五子棋人机对战案例。
+一个用 **纯 Java（零第三方依赖）** 写后端、用原生 HTML/CSS/JavaScript 写前端的五子棋案例，支持 **人机对战** 和 **双人联机对战**。
 
-Java 负责所有"真正难"的部分：棋盘状态、落子合法性、五连判定、电脑 AI 决策。
-网页只负责把棋盘画出来、把点击发给后端。所以这是一个货真价实的 Java 案例，同时又有一个可以在浏览器里玩的界面。
+Java 负责所有"真正难"的部分：棋盘状态、落子合法性、五连判定、电脑 AI 决策、会话隔离和联机房间。
+网页只负责把棋盘画出来、把点击发给后端。每个人的人机局由浏览器 Cookie 隔离；双人模式通过 6 位房间码进入同一盘棋。
 
 ## 技术要点
 
@@ -41,7 +41,7 @@ java -cp out GomokuServer
 项目自带一个不需要任何测试框架的自测程序，用来验证胜负判定和 AI 的攻防逻辑：
 
 ```bat
-javac -encoding UTF-8 -d out-test src\Board.java src\GomokuAI.java src\Json.java src\Game.java test\SelfTest.java
+javac -encoding UTF-8 -d out-test src\*.java test\SelfTest.java
 java -cp out-test SelfTest
 ```
 
@@ -53,6 +53,7 @@ gomoku/
 │   ├── Board.java          棋盘模型：落子、悔棋、五连判定
 │   ├── GomokuAI.java       电脑对手：打分 + 堵截 + 推演
 │   ├── Game.java           一局棋的状态与业务规则
+│   ├── PvpRoom.java        双人房间：黑白分配、回合与胜负
 │   ├── Json.java           极简 JSON 读写工具
 │   └── GomokuServer.java   HTTP 服务：接口 + 静态文件
 ├── test/
@@ -68,28 +69,41 @@ gomoku/
 
 ## 怎么玩
 
-- 你执黑棋先行，电脑执白棋。
+- 顶部可以切换「人机对战」和「双人对战」。
+- 人机模式：你执黑棋先行，电脑执白棋。
+- 双人模式：创建房间后把 6 位房间码发给朋友，对方输入即可加入；创建者执黑先行。
 - 点击交叉点落子，鼠标悬停会显示半透明预览。
 - 顶部可以切换棋盘大小（9×9 / 13×13 / 15×15）和电脑难度（简单 / 普通 / 困难）。
-- 下错了可以点「悔棋」，会同时撤销你的上一手和电脑的应手。
+- 人机模式悔棋会同时撤销你的上一手和电脑的应手；联机模式只能撤回自己刚下的最后一手。
+- 不同浏览器的会话各自拥有独立的人机局，不会互相覆盖。
 - 先连成五子的一方获胜，获胜的连珠会高亮显示。
+
+> 联机模式通过每 1.2 秒轮询一次状态来同步对手落子。房间和对局保存在服务器内存中，重启服务后会清空。
 
 ## 接口说明
 
-所有接口都返回同一个状态对象。
+服务端通过 Cookie `gomoku_sid` 区分浏览器，所以接口不能脱离 Cookie 直接共享状态。
 
 | 方法 | 路径 | 请求体 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/state` | 无 | 读取当前对局 |
-| POST | `/api/new` | `{"size": 15}` | 开新局，size 支持 9 / 13 / 15 |
-| POST | `/api/move` | `{"r": 7, "c": 7}` | 玩家落子，电脑会自动应手 |
-| POST | `/api/undo` | `{}` | 悔棋 |
+| GET | `/api/state` | 无 | 读取当前会话所在模式的最新状态 |
+| POST | `/api/mode` | `{"mode": "solo"}` | 切换模式，`solo` 或 `pvp` |
+| POST | `/api/new` | `{"size": 15}` | 人机开新局，size 支持 9 / 13 / 15 |
+| POST | `/api/move` | `{"r": 7, "c": 7}` | 人机落子，电脑会自动应手 |
+| POST | `/api/undo` | `{}` | 人机悔棋 |
 | POST | `/api/difficulty` | `{"level": 2}` | 切换难度，1 / 2 / 3 |
+| POST | `/api/pvp/create` | `{"size": 15}` | 创建双人房间，创建者执黑 |
+| POST | `/api/pvp/join` | `{"room": "ABC234"}` | 通过房间码加入，第二人执白 |
+| POST | `/api/pvp/move` | `{"r": 7, "c": 7}` | 联机落子，只能轮到自己的回合 |
+| POST | `/api/pvp/undo` | `{}` | 撤回自己刚下的最后一手 |
+| POST | `/api/pvp/new` | `{}` | 对局结束后再来一盘 |
+| POST | `/api/pvp/leave` | `{}` | 离开房间 |
 
-返回示例：
+人机状态示例：
 
 ```json
 {
+  "mode": "solo",
   "size": 15,
   "status": "playing",
   "playerColor": 1,
@@ -104,9 +118,30 @@ gomoku/
 }
 ```
 
-（`board` 字段是一个 `size × size` 的二维数组，取值 0 = 空、1 = 黑棋、2 = 白棋，这里省略没写。）
+联机状态示例：
 
-`status` 取值：`playing`、`black_win`（玩家胜）、`white_win`（电脑胜）、`draw`。
+```json
+{
+  "mode": "pvp",
+  "phase": "playing",
+  "room": "ABC234",
+  "size": 15,
+  "status": "playing",
+  "turn": 1,
+  "myColor": 1,
+  "blackPresent": true,
+  "whitePresent": true,
+  "moves": 2,
+  "lastMove": {"r": 7, "c": 8},
+  "message": "轮到你落子",
+  "winLine": null
+}
+```
+
+（`board` 字段是一个 `size × size` 的二维数组，取值 0 = 空、1 = 黑棋、2 = 白棋，示例中省略没写。）
+
+`phase` 取值：`lobby`（未进房）、`waiting`（等人加入）、`playing`、`finished`。
+`status` 取值：`playing`、`black_win`、`white_win`、`draw`。
 参数不合法时返回 HTTP 400 和 `{"error": "..."}`。
 
 ## 代码讲解：AI 是怎么下棋的

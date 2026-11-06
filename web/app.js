@@ -18,6 +18,17 @@
     var difficultySelect = document.getElementById('difficulty');
     var newGameBtn = document.getElementById('new-game');
     var undoBtn = document.getElementById('undo');
+    var modeButtons = document.querySelectorAll('.mode-switch__btn');
+    var createRoomBtn = document.getElementById('create-room');
+    var joinRoomBtn = document.getElementById('join-room');
+    var leaveRoomBtn = document.getElementById('leave-room');
+    var roomCodeInput = document.getElementById('room-code');
+    var roomDisplay = document.getElementById('room-display');
+    var colorDisplay = document.getElementById('color-display');
+    var youStone = document.getElementById('you-stone');
+    var otherStone = document.getElementById('other-stone');
+    var youLabel = document.getElementById('you-label');
+    var otherLabel = document.getElementById('other-label');
 
     /** 星位（让棋手定位用的黑点），按棋盘大小给出 */
     var STAR_POINTS = {
@@ -28,6 +39,7 @@
 
     /** 后端返回的完整对局状态 */
     var state = {
+        mode: 'solo',
         size: 15,
         board: [],
         status: 'playing',
@@ -38,13 +50,20 @@
         difficulty: 2,
         message: '',
         aiMillis: 0,
-        winLine: null
+        winLine: null,
+        phase: 'playing',
+        room: null,
+        myColor: 0,
+        turn: 1,
+        blackPresent: false,
+        whitePresent: false
     };
 
     var hover = null;          // 鼠标悬停的交叉点 {r, c}，不在棋盘上时为 null
     var busy = false;          // 是否有请求还在路上
     var metrics = null;        // 绘制几何信息，供点击换算使用
     var pending = null;        // 刚落下的棋子，用于出现动画
+    var pollTimer = null;       // 联机模式定时拉取对手的最新落子
 
     // ---------------------------------------------------------------- 网络
 
@@ -71,35 +90,105 @@
 
     // ---------------------------------------------------------------- 状态渲染
 
-    function applyState(data) {
+    function applyState(data, silent) {
         if (!data) {
             return;
         }
         state = data;
-        hover = null;
-        sizeSelect.value = String(state.size);
-        difficultySelect.value = String(state.difficulty);
-        movesEl.textContent = String(state.moves);
-        aiMillisEl.textContent = state.aiMillis + ' ms';
-
-        var tone = 'info';
-        if (state.status === 'black_win') {
-            tone = 'win';
-        } else if (state.status === 'white_win') {
-            tone = 'lose';
-        } else if (state.status === 'draw') {
-            tone = 'info';
+        if (!silent) {
+            hover = null;
         }
-        setMessage(state.message, tone);
 
-        var finished = state.status !== 'playing';
-        canvas.classList.toggle('board--disabled', finished || busy);
-        undoBtn.disabled = busy || state.moves === 0;
-        newGameBtn.disabled = busy;
-        sizeSelect.disabled = busy;
+        updateModeUi();
+        sizeSelect.value = String(state.size);
+        if (state.difficulty) {
+            difficultySelect.value = String(state.difficulty);
+        }
+        movesEl.textContent = String(state.moves);
+
+        if (state.mode === 'pvp') {
+            roomDisplay.textContent = state.room || '—';
+            colorDisplay.textContent = colorName(state.myColor);
+            updateLegend();
+        } else {
+            aiMillisEl.textContent = state.aiMillis + ' ms';
+            updateLegend();
+        }
+
+        setMessage(state.message, toneForState());
+
+        var inRoom = state.mode === 'pvp' && !!state.room;
+        var canUndo = state.moves > 0;
+        if (state.mode === 'pvp' && state.lastMove && state.board[state.lastMove.r]) {
+            canUndo = state.board[state.lastMove.r][state.lastMove.c] === state.myColor;
+        }
+        undoBtn.disabled = busy || !canUndo;
+        newGameBtn.disabled = busy || (state.mode === 'pvp' && (!inRoom || state.status === 'playing'));
+        sizeSelect.disabled = busy || inRoom;
         difficultySelect.disabled = busy;
+        createRoomBtn.disabled = busy || inRoom;
+        joinRoomBtn.disabled = busy || inRoom;
+        leaveRoomBtn.disabled = busy || !inRoom;
+        roomCodeInput.disabled = busy || inRoom;
+        canvas.classList.toggle('board--disabled', !canPlay());
 
+        syncOverlay();
+        updatePolling();
         render();
+    }
+
+    function updateModeUi() {
+        var pvp = state.mode === 'pvp';
+        document.body.classList.toggle('mode-pvp', pvp);
+        document.body.classList.toggle('mode-solo', !pvp);
+        modeButtons.forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.mode === (pvp ? 'pvp' : 'solo'));
+            button.disabled = busy;
+        });
+    }
+
+    function updateLegend() {
+        var mine = state.mode === 'pvp' ? state.myColor : 1;
+        var other = mine === 1 ? 2 : (mine === 2 ? 1 : 0);
+
+        youStone.className = 'stone ' + (mine === 2 ? 'stone--white' : 'stone--black');
+        otherStone.className = 'stone ' + (other === 1 ? 'stone--black' : 'stone--white');
+
+        if (state.mode !== 'pvp') {
+            youLabel.textContent = '你（黑棋）';
+            otherLabel.textContent = '电脑（白棋）';
+        } else if (mine === 1) {
+            youLabel.textContent = '你（黑棋）';
+            otherLabel.textContent = '对手（白棋）';
+        } else if (mine === 2) {
+            youLabel.textContent = '你（白棋）';
+            otherLabel.textContent = '对手（黑棋）';
+        } else {
+            youLabel.textContent = '你';
+            otherLabel.textContent = '对手';
+        }
+    }
+
+    function colorName(color) {
+        if (color === 1) {
+            return '黑棋';
+        }
+        if (color === 2) {
+            return '白棋';
+        }
+        return '—';
+    }
+
+    function toneForState() {
+        if (state.status === 'draw') {
+            return 'info';
+        }
+        if (state.status === 'black_win' || state.status === 'white_win') {
+            var winner = state.status === 'black_win' ? 1 : 2;
+            var mine = state.mode === 'pvp' ? state.myColor : 1;
+            return mine === winner ? 'win' : 'lose';
+        }
+        return 'info';
     }
 
     function setMessage(text, tone) {
@@ -115,11 +204,25 @@
         busy = value;
         if (value) {
             overlayText.textContent = text || '处理中…';
-            overlay.hidden = false;
-        } else {
-            overlay.hidden = true;
         }
-        canvas.classList.toggle('board--disabled', value || state.status !== 'playing');
+        syncOverlay();
+        canvas.classList.toggle('board--disabled', !canPlay());
+        updateModeUi();
+    }
+
+    function syncOverlay() {
+        if (busy) {
+            overlay.hidden = false;
+            return;
+        }
+        if (state.mode === 'pvp' && state.phase === 'waiting') {
+            overlayText.textContent = state.room
+                ? '等待对手加入… 房间码 ' + state.room
+                : '等待玩家加入…';
+            overlay.hidden = false;
+            return;
+        }
+        overlay.hidden = true;
     }
 
     // ---------------------------------------------------------------- 绘制
@@ -165,8 +268,9 @@
         drawStars();
         drawStones();
         drawHighlights();
-        if (hover && state.status === 'playing' && !busy) {
-            drawStone(hover.r, hover.c, state.playerColor, 0.42, false);
+        if (hover && canPlay()) {
+            var previewColor = state.mode === 'pvp' ? state.myColor : state.playerColor;
+            drawStone(hover.r, hover.c, previewColor, 0.42, false);
         }
     }
 
@@ -360,7 +464,15 @@
     }
 
     function canPlay() {
-        return !busy && state.status === 'playing';
+        if (busy || state.status !== 'playing') {
+            return false;
+        }
+        if (state.mode === 'pvp') {
+            return state.phase === 'playing'
+                && state.myColor !== 0
+                && state.turn === state.myColor;
+        }
+        return true;
     }
 
     function play(r, c) {
@@ -370,12 +482,32 @@
         if (!state.board[r] || state.board[r][c] !== 0) {
             return;
         }
-        resolveMove(r, c);
+        if (state.mode === 'pvp') {
+            resolvePvpMove(r, c);
+        } else {
+            resolveMove(r, c);
+        }
     }
 
     function resolveMove(r, c) {
         setBusy(true, '电脑思考中…');
         postJson('/api/move', {r: r, c: c})
+            .then(function (data) {
+                setBusy(false);
+                pending = {r: r, c: c, start: Date.now()};
+                applyState(data);
+                animate();
+            })
+            .catch(function (error) {
+                setBusy(false);
+                setMessage(error.message, 'error');
+                render();
+            });
+    }
+
+    function resolvePvpMove(r, c) {
+        setBusy(true, '正在落子…');
+        postJson('/api/pvp/move', {r: r, c: c})
             .then(function (data) {
                 setBusy(false);
                 pending = {r: r, c: c, start: Date.now()};
@@ -423,8 +555,23 @@
         if (!target) {
             return;
         }
+        if (busy) {
+            return;
+        }
+        if (state.mode === 'pvp' && state.phase === 'lobby') {
+            setMessage('先创建或加入一个房间，才能开始联机对局', 'error');
+            return;
+        }
+        if (state.mode === 'pvp' && state.phase === 'waiting') {
+            setMessage('等待对手加入后再落子', 'error');
+            return;
+        }
         if (state.status !== 'playing') {
             setMessage('这一局已经结束了，点「新对局」再来一盘吧', 'error');
+            return;
+        }
+        if (state.mode === 'pvp' && state.turn !== state.myColor) {
+            setMessage('还没轮到你落子，等待对手落子…', 'error');
             return;
         }
         if (state.board[target.r][target.c] !== 0) {
@@ -435,9 +582,9 @@
     });
 
     newGameBtn.addEventListener('click', function () {
-        var size = parseInt(sizeSelect.value, 10);
-        setBusy(true, '正在开局…');
-        postJson('/api/new', {size: size})
+        var isPvp = state.mode === 'pvp';
+        setBusy(true, isPvp ? '正在重开…' : '正在开局…');
+        postJson(isPvp ? '/api/pvp/new' : '/api/new', {size: parseInt(sizeSelect.value, 10)})
             .then(function (data) {
                 setBusy(false);
                 pending = null;
@@ -451,7 +598,7 @@
 
     undoBtn.addEventListener('click', function () {
         setBusy(true, '正在悔棋…');
-        postJson('/api/undo', {})
+        postJson(state.mode === 'pvp' ? '/api/pvp/undo' : '/api/undo', {})
             .then(function (data) {
                 setBusy(false);
                 pending = null;
@@ -475,6 +622,124 @@
                 setBusy(false);
                 setMessage(error.message, 'error');
             });
+    });
+
+    modeButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            var mode = button.dataset.mode;
+            if (mode === state.mode) {
+                return;
+            }
+            setBusy(true, '正在切换模式…');
+            pending = null;
+            postJson('/api/mode', {mode: mode})
+                .then(function (data) {
+                    setBusy(false);
+                    applyState(data);
+                })
+                .catch(function (error) {
+                    setBusy(false);
+                    setMessage(error.message, 'error');
+                });
+        });
+    });
+
+    createRoomBtn.addEventListener('click', function () {
+        var size = parseInt(sizeSelect.value, 10);
+        setBusy(true, '正在创建房间…');
+        postJson('/api/pvp/create', {size: size})
+            .then(function (data) {
+                setBusy(false);
+                pending = null;
+                applyState(data);
+            })
+            .catch(function (error) {
+                setBusy(false);
+                setMessage(error.message, 'error');
+            });
+    });
+
+    joinRoomBtn.addEventListener('click', function () {
+        var code = roomCodeInput.value.trim().toUpperCase();
+        if (!code) {
+            setMessage('请输入 6 位房间码', 'error');
+            roomCodeInput.focus();
+            return;
+        }
+        setBusy(true, '正在加入房间…');
+        postJson('/api/pvp/join', {room: code})
+            .then(function (data) {
+                setBusy(false);
+                roomCodeInput.value = '';
+                pending = null;
+                applyState(data);
+            })
+            .catch(function (error) {
+                setBusy(false);
+                setMessage(error.message, 'error');
+            });
+    });
+
+    roomCodeInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            joinRoomBtn.click();
+        }
+    });
+
+    leaveRoomBtn.addEventListener('click', function () {
+        setBusy(true, '正在离开房间…');
+        postJson('/api/pvp/leave', {})
+            .then(function (data) {
+                setBusy(false);
+                pending = null;
+                applyState(data);
+            })
+            .catch(function (error) {
+                setBusy(false);
+                setMessage(error.message, 'error');
+            });
+    });
+
+    function updatePolling() {
+        if (state.mode === 'pvp') {
+            if (!pollTimer) {
+                pollTimer = window.setInterval(refreshPvpState, 1200);
+            }
+        } else if (pollTimer) {
+            window.clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function refreshPvpState() {
+        if (busy || document.hidden) {
+            return;
+        }
+        request('/api/state')
+            .then(function (data) {
+                if (!data || data.mode !== 'pvp') {
+                    return;
+                }
+                var oldLast = state.lastMove ? state.lastMove.r + ',' + state.lastMove.c : null;
+                var newLast = data.lastMove ? data.lastMove.r + ',' + data.lastMove.c : null;
+                if (newLast && newLast !== oldLast) {
+                    pending = {r: data.lastMove.r, c: data.lastMove.c, start: Date.now()};
+                }
+                applyState(data, true);
+                if (pending) {
+                    animate();
+                }
+            })
+            .catch(function () {
+                // 轮询失败不打断操作，下一次会自动重试
+            });
+    }
+
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden && state.mode === 'pvp') {
+            refreshPvpState();
+        }
     });
 
     // 窗口尺寸变化（或手机旋转）时重画，棋盘始终铺满容器

@@ -106,7 +106,8 @@ public class Game {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
 
-        sb.append("\"size\":").append(board.size());
+        sb.append("\"mode\":\"solo\"");
+        sb.append(",\"size\":").append(board.size());
 
         sb.append(",\"board\":[");
         for (int r = 0; r < board.size(); r++) {

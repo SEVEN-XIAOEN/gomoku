@@ -6,12 +6,17 @@
     <title>网页五子棋</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="mode-solo">
 <main class="app">
     <header class="app__header">
         <h1 class="app__title">五子棋</h1>
-        <p class="app__subtitle">你执黑先行 · 电脑执白 · 先连成五子者获胜</p>
+        <p class="app__subtitle">人机对战或邀请朋友联机 · 先连成五子者获胜</p>
     </header>
+
+    <nav class="mode-switch" aria-label="游戏模式">
+        <button class="mode-switch__btn is-active" type="button" data-mode="solo">人机对战</button>
+        <button class="mode-switch__btn" type="button" data-mode="pvp">双人对战</button>
+    </nav>
 
     <section class="toolbar">
         <label class="field" for="size">
@@ -23,7 +28,7 @@
             </select>
         </label>
 
-        <label class="field" for="difficulty">
+        <label class="field solo-only" id="difficulty-field" for="difficulty">
             <span class="field__label">电脑难度</span>
             <select id="difficulty" class="field__input">
                 <option value="1">简单</option>
@@ -32,9 +37,17 @@
             </select>
         </label>
 
-        <div class="toolbar__buttons">
+        <div class="toolbar__buttons" id="game-actions">
             <button id="new-game" class="btn btn--primary" type="button">新对局</button>
             <button id="undo" class="btn" type="button">悔棋</button>
+        </div>
+
+        <div class="toolbar__buttons pvp-only" id="pvp-actions">
+            <button id="create-room" class="btn btn--primary" type="button">创建房间</button>
+            <input id="room-code" class="field__input room-code-input" type="text"
+                   maxlength="6" placeholder="房间码" autocomplete="off">
+            <button id="join-room" class="btn" type="button">加入</button>
+            <button id="leave-room" class="btn" type="button">离开</button>
         </div>
     </section>
 
@@ -56,25 +69,39 @@
                         <dt>已下</dt>
                         <dd><span id="moves">0</span> 手</dd>
                     </div>
-                    <div class="stat">
+                    <div class="stat solo-only">
                         <dt>电脑用时</dt>
                         <dd id="ai-millis">0 ms</dd>
+                    </div>
+                    <div class="stat pvp-only">
+                        <dt>房间码</dt>
+                        <dd id="room-display" class="room-code-display">—</dd>
+                    </div>
+                    <div class="stat pvp-only">
+                        <dt>你的棋子</dt>
+                        <dd id="color-display">—</dd>
                     </div>
                 </dl>
             </div>
 
             <ul class="legend">
                 <li class="legend__item">
-                    <span class="stone stone--black" aria-hidden="true"></span>你（黑棋）
+                    <span class="stone stone--black" id="you-stone" aria-hidden="true"></span>
+                    <span id="you-label">你（黑棋）</span>
                 </li>
                 <li class="legend__item">
-                    <span class="stone stone--white" aria-hidden="true"></span>电脑（白棋）
+                    <span class="stone stone--white" id="other-stone" aria-hidden="true"></span>
+                    <span id="other-label">电脑（白棋）</span>
                 </li>
             </ul>
 
-            <p class="hint">
+            <p class="hint solo-only">
                 点击棋盘交叉点落子，鼠标悬停会显示预览。<br>
                 下错了可以点「悔棋」，会同时撤销你和电脑的最近一手。
+            </p>
+            <p class="hint pvp-only">
+                创建房间后把 6 位房间码发给朋友，对方输入房间码即可加入。<br>
+                创建者执黑先行，双方轮流落子；联机悔棋只能撤回自己刚下的最后一手。
             </p>
         </aside>
     </div>
