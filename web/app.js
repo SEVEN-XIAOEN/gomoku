@@ -233,14 +233,17 @@
      */
     function layout() {
         var rect = canvas.getBoundingClientRect();
-        var side = Math.round(rect.width || 600);
+        var side = rect.width || 600;
         var dpr = window.devicePixelRatio || 1;
+        var pixelWidth = Math.round(side * dpr);
 
-        if (canvas.width !== Math.round(side * dpr) || canvas.height !== Math.round(side * dpr)) {
-            canvas.width = Math.round(side * dpr);
-            canvas.height = Math.round(side * dpr);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelWidth) {
+            canvas.width = pixelWidth;
+            canvas.height = pixelWidth;
         }
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // 用实际像素宽度反推缩放，避免小数 CSS 尺寸造成 Canvas 拉伸和点击偏移。
+        var scale = pixelWidth / side;
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
         var pad = side * 0.052;
         var cell = (side - pad * 2) / (state.size - 1);

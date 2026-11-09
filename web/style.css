@@ -25,12 +25,19 @@ html, body {
     padding: 0;
 }
 
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 28px 18px 40px;
+    overflow-x: hidden;
     font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
     color: var(--ink);
     background:
@@ -41,6 +48,7 @@ body {
 
 .app {
     width: min(1040px, 100%);
+    min-width: 0;
 }
 
 .app__header {
@@ -156,6 +164,8 @@ body.mode-pvp .solo-only {
 
 .board-wrap {
     position: relative;
+    width: 100%;
+    min-width: 0;
     aspect-ratio: 1 / 1;
     border-radius: 14px;
     background: var(--card);
@@ -240,7 +250,7 @@ body.mode-pvp .solo-only {
 .field__input {
     width: 100%;
     padding: 9px 10px;
-    font-size: 15px;
+    font-size: 16px;
     color: var(--ink);
     background: #fff;
     border: 1px solid var(--line);
@@ -417,11 +427,99 @@ body.mode-pvp .solo-only {
         flex: 1 1 96px;
     }
 
+    #pvp-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #pvp-actions .room-code-input {
+        grid-column: 1 / -1;
+        width: 100%;
+        min-width: 0;
+    }
+
+    #pvp-actions .btn {
+        width: 100%;
+        min-width: 0;
+    }
+
     .app__body {
         grid-template-columns: minmax(0, 1fr);
     }
 
     .panel {
         order: 2;
+    }
+}
+
+@media (max-width: 640px) {
+    body {
+        align-items: stretch;
+        justify-content: stretch;
+        padding: 0;
+    }
+
+    .app {
+        width: 100%;
+        padding-right: env(safe-area-inset-right);
+        padding-left: env(safe-area-inset-left);
+    }
+
+    .app__header {
+        margin-bottom: 14px;
+        padding: calc(14px + env(safe-area-inset-top)) 12px 0;
+    }
+
+    .app__title {
+        font-size: clamp(24px, 7vw, 32px);
+    }
+
+    .app__subtitle {
+        margin-top: 6px;
+        font-size: 13px;
+        line-height: 1.45;
+    }
+
+    .mode-switch {
+        width: calc(100% - 24px);
+        margin: 0 12px 14px;
+    }
+
+    .mode-switch__btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .toolbar {
+        margin-bottom: 14px;
+        padding: 14px 12px;
+        border-radius: 0;
+        box-shadow: 0 10px 24px rgba(76, 58, 32, 0.12);
+    }
+
+    .toolbar .field {
+        flex-basis: calc(50% - 9px);
+        min-width: 0;
+    }
+
+    .toolbar__buttons .btn {
+        min-height: 44px;
+    }
+
+    .app__body {
+        gap: 14px;
+    }
+
+    .board-wrap {
+        border-radius: 0;
+        box-shadow: 0 10px 24px rgba(76, 58, 32, 0.16);
+    }
+
+    .panel {
+        padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+        border-radius: 0;
+        box-shadow: none;
     }
 }
