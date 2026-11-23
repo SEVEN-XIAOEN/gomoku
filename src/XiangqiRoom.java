@@ -34,6 +34,8 @@ public class XiangqiRoom extends Room {
         }
 
         match.move(fr, fc, tr, tc);
+        // 对方没有接受悔棋而是直接走棋，视为放弃这次申请。
+        undoOffer = 0;
 
         if (match.status() == XiangqiMatch.FINISHED) {
             status = FINISHED;
@@ -45,9 +47,13 @@ public class XiangqiRoom extends Room {
         }
     }
 
-    /** 联机悔棋只能撤回自己刚走的一手。 */
+    /**
+     * 联机悔棋改为「申请 - 同意」流程：这里只登记申请，真正撤棋在
+     * {@link #answerUndo(String, String)} 中由对手接受后执行。
+     */
     @Override
     public synchronized void undo(String sessionId) {
+        checkTimeout(System.currentTimeMillis());
         touch();
         int seat = seatOf(sessionId);
         if (seat == 0) {
@@ -64,10 +70,43 @@ public class XiangqiRoom extends Room {
         }
         XiangqiMove last = match.lastMove();
         if (last.color != seat) {
-            throw new IllegalArgumentException("只能撤回自己刚走的最后一手");
+            throw new IllegalArgumentException("只能申请撤回自己刚走的最后一手");
         }
-        match.undoLast();
-        onUndo(match.turn());
+        if (undoOffer == seat) {
+            throw new IllegalArgumentException("你已经申请悔棋了，等待对方回应");
+        }
+        if (undoOffer != 0) {
+            throw new IllegalArgumentException("请先处理对方发起的悔棋申请");
+        }
+        undoOffer = seat;
+    }
+
+    /** 对手回应悔棋申请：accept 撤棋，decline 关闭申请。 */
+    public synchronized void answerUndo(String sessionId, String action) {
+        checkTimeout(System.currentTimeMillis());
+        touch();
+        int seat = seatOf(sessionId);
+        if (seat == 0) {
+            throw new IllegalArgumentException("你不在这个房间里");
+        }
+        if (status != PLAYING) {
+            throw new IllegalArgumentException("对局已经结束");
+        }
+        if (undoOffer == 0) {
+            throw new IllegalArgumentException("没有待处理的悔棋申请");
+        }
+        if (undoOffer == seat) {
+            throw new IllegalArgumentException("申请是你发起的，等待对方回应");
+        }
+        if ("accept".equals(action)) {
+            match.undoLast();
+            undoOffer = 0;
+            onUndo(match.turn());
+        } else if ("decline".equals(action)) {
+            undoOffer = 0;
+        } else {
+            throw new IllegalArgumentException("action 只能是 accept / decline");
+        }
     }
 
     /** 返回某枚棋子的合法落点，供前端高亮；规则仍由服务端生成。 */
@@ -105,10 +144,11 @@ public class XiangqiRoom extends Room {
         sb.append("]}");
         return sb.toString();
     }
+
     @Override
     public synchronized String stateJson(String sessionId) {
         int seat = seatOf(sessionId);
-        StringBuilder sb = new StringBuilder(1200);
+        StringBuilder sb = new StringBuilder(1800);
         sb.append('{');
         appendCommon(sb, sessionId);
 
@@ -137,6 +177,8 @@ public class XiangqiRoom extends Room {
         sb.append(",\"lastMove\":");
         appendMove(sb, match.lastMove());
         sb.append(",\"moves\":").append(match.historySize());
+        appendHistory(sb);
+        appendCaptured(sb);
         sb.append(",\"winLine\":null");
         sb.append(",\"message\":\"").append(Json.escape(message(seat))).append('"');
         sb.append('}');
@@ -153,7 +195,39 @@ public class XiangqiRoom extends Room {
                 .append(",\"tr\":").append(mv.tr)
                 .append(",\"tc\":").append(mv.tc)
                 .append(",\"color\":").append(mv.color)
-                .append(",\"check\":").append(mv.check).append('}');
+                .append(",\"captured\":").append(mv.captured)
+                .append(",\"check\":").append(mv.check)
+                .append(",\"notation\":\"").append(Json.escape(mv.notation)).append('"')
+                .append('}');
+    }
+
+    private void appendHistory(StringBuilder sb) {
+        sb.append(",\"history\":[");
+        java.util.List<String> notation = match.notationHistory();
+        for (int i = 0; i < notation.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append('"').append(Json.escape(notation.get(i))).append('"');
+        }
+        sb.append(']');
+    }
+
+    private void appendCaptured(StringBuilder sb) {
+        appendPieces(sb, "capturedRed", match.capturedPieces(XiangqiBoard.RED));
+        appendPieces(sb, "capturedBlack", match.capturedPieces(XiangqiBoard.BLACK));
+        sb.append(",\"materialDiff\":").append(match.materialDiff());
+    }
+
+    private void appendPieces(StringBuilder sb, String name, java.util.List<Integer> pieces) {
+        sb.append(",\"").append(name).append("\":[");
+        for (int i = 0; i < pieces.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(pieces.get(i));
+        }
+        sb.append(']');
     }
 
     private String statusName() {
@@ -188,6 +262,11 @@ public class XiangqiRoom extends Room {
         }
         if (seat == 0) {
             return "你正在观战";
+        }
+        if (undoOffer != 0) {
+            return undoOffer == seat
+                    ? "已发送悔棋申请，等待对方同意"
+                    : "对方申请悔棋，请在右侧选择接受或拒绝";
         }
         if (match.turn() != seat) {
             return "等待对手走棋…";

@@ -81,6 +81,39 @@
         }, 2800);
     }
 
+    /** 复制文本：优先 Clipboard API，HTTP/旧浏览器回退到隐藏 textarea。 */
+    function copyText(text) {
+        function fallback() {
+            return new Promise(function (resolve, reject) {
+                var area = document.createElement('textarea');
+                area.value = text;
+                area.setAttribute('readonly', '');
+                area.style.position = 'fixed';
+                area.style.left = '-9999px';
+                area.style.top = '0';
+                document.body.appendChild(area);
+                area.select();
+                area.setSelectionRange(0, area.value.length);
+                var ok = false;
+                try {
+                    ok = document.execCommand('copy');
+                } catch (error) {
+                    ok = false;
+                }
+                document.body.removeChild(area);
+                if (ok) {
+                    resolve();
+                } else {
+                    reject(new Error('当前浏览器不支持自动复制'));
+                }
+            });
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text).catch(fallback);
+        }
+        return fallback();
+    }
+
     function netStatus(tone, text) {
         var el = byId('net-status');
         if (!el) {
@@ -256,6 +289,7 @@
         setDisabled: setDisabled,
         toast: toast,
         netStatus: netStatus,
+        copyText: copyText,
         createClock: createClock,
         roomModal: { open: openRoomModal }
     };

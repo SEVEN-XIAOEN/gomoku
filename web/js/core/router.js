@@ -10,15 +10,41 @@
     var handlers = [];
     var currentPath = null;
 
+    /** 把 #/xiangqi?room=ABC123 拆成路径和查询参数。 */
+    function parse(hash) {
+        var raw = (hash || '').replace(/^#/, '');
+        var query = {};
+        var mark = raw.indexOf('?');
+        if (mark >= 0) {
+            var search = raw.slice(mark + 1);
+            raw = raw.slice(0, mark);
+            search.split('&').forEach(function (pair) {
+                if (!pair) {
+                    return;
+                }
+                var eq = pair.indexOf('=');
+                var key = eq >= 0 ? pair.slice(0, eq) : pair;
+                var value = eq >= 0 ? pair.slice(eq + 1) : '';
+                try {
+                    key = decodeURIComponent(key.replace(/\+/g, ' '));
+                    value = decodeURIComponent(value.replace(/\+/g, ' '));
+                } catch (error) {
+                    // 非法转义时保留原文
+                }
+                query[key] = value;
+            });
+        }
+        if (!raw) {
+            return { path: '', query: query };
+        }
+        if (raw.charAt(0) !== '/') {
+            raw = '/' + raw;
+        }
+        return { path: raw.replace(/\/+$/, '') || '/', query: query };
+    }
+
     function normalize(hash) {
-        var path = (hash || '').replace(/^#/, '');
-        if (!path) {
-            return '';
-        }
-        if (path.charAt(0) !== '/') {
-            path = '/' + path;
-        }
-        return path.replace(/\/+$/, '') || '/';
+        return parse(hash).path;
     }
 
     function dispatch() {
@@ -77,6 +103,10 @@
         },
         current: function () {
             return currentPath;
+        },
+        parse: parse,
+        query: function () {
+            return parse(window.location.hash).query;
         },
         onChange: function (fn) {
             handlers.push(fn);

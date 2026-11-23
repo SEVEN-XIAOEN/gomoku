@@ -113,8 +113,9 @@
             activeGame.tick();
         }, 100);
 
+        // 联机轮询在后台也保留（浏览器会自行节流），这样轮到自己时能更新标签页标题。
         setInterval(function () {
-            if (document.hidden || !activeGame) {
+            if (!activeGame) {
                 return;
             }
             activeGame.poll();
@@ -128,10 +129,10 @@
         });
 
         QP.api.get('/api/session/state').then(function (state) {
-            var hash = (window.location.hash || '').replace(/^#/, '');
+            var parsed = QP.router.parse(window.location.hash);
             // 只有显式 hash 才直达棋种；否则始终先回到大厅选择游戏。
-            var target = (hash === '/gomoku' || hash === '/xiangqi' || hash === '/lobby')
-                ? hash
+            var target = (parsed.path === '/gomoku' || parsed.path === '/xiangqi' || parsed.path === '/lobby')
+                ? parsed.path
                 : '/lobby';
             if (target === '/lobby' && state && state.game && state.game !== 'lobby') {
                 // 重新打开页面时先让服务端离开上次的棋局/房间，避免后台残留旧对局。

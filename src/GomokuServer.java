@@ -262,6 +262,20 @@ public class GomokuServer {
                     return room.stateJson(session.id);
                 }));
 
+        server.createContext("/api/rooms/undo/answer", exchange ->
+                guard(exchange, "POST", session -> {
+                    Room room = requireRoom(session);
+                    if (!(room instanceof XiangqiRoom xiangqi)) {
+                        throw new IllegalArgumentException("只有象棋支持悔棋申请");
+                    }
+                    String action = Json.getString(readBody(exchange), "action");
+                    if (action == null) {
+                        throw new IllegalArgumentException("缺少 action");
+                    }
+                    xiangqi.answerUndo(session.id, action);
+                    return room.stateJson(session.id);
+                }));
+
         server.createContext("/api/rooms/resign", exchange ->
                 guard(exchange, "POST", session -> {
                     Room room = requireRoom(session);
@@ -443,11 +457,15 @@ public class GomokuServer {
         sb.append("\"game\":\"").append(game).append('"');
         sb.append(",\"mode\":\"pvp\",\"phase\":\"lobby\",\"room\":null");
         sb.append(",\"myColor\":0,\"mySeat\":0,\"firstPresent\":false,\"secondPresent\":false");
+        sb.append(",\"opponentOnline\":false,\"opponentLastSeenMs\":-1");
         sb.append(",\"status\":\"playing\",\"turn\":0,\"moves\":0,\"lastMove\":null,\"winLine\":null");
-        sb.append(",\"clock\":null,\"drawOffer\":0,\"rematchVotes\":[false,false]");
+        sb.append(",\"clock\":null,\"drawOffer\":0,\"undoOffer\":0,\"undoRequestSeat\":0");
+        sb.append(",\"rematchVotes\":[false,false]");
         sb.append(",\"message\":\"创建或加入一个房间\"");
         if ("xiangqi".equals(game)) {
-            sb.append(",\"rows\":10,\"cols\":9,\"check\":false,\"endReason\":\"\",\"board\":[");
+            sb.append(",\"rows\":10,\"cols\":9,\"check\":false,\"endReason\":\"\"");
+            sb.append(",\"history\":[],\"capturedRed\":[],\"capturedBlack\":[],\"materialDiff\":0");
+            sb.append(",\"board\":[");
             for (int r = 0; r < XiangqiBoard.ROWS; r++) {
                 if (r > 0) {
                     sb.append(',');

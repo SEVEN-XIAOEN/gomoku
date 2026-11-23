@@ -76,6 +76,55 @@ public class XiangqiMatch {
         return history.isEmpty() ? null : history.get(history.size() - 1);
     }
 
+    /** 当前完整中文棋谱。 */
+    public List<String> notationHistory() {
+        List<String> list = new ArrayList<>(history.size());
+        for (XiangqiMove mv : history) {
+            list.add(mv.notation);
+        }
+        return list;
+    }
+
+    /** 被吃掉的某一方棋子（按被吃先后排序）。 */
+    public List<Integer> capturedPieces(int color) {
+        List<Integer> list = new ArrayList<>();
+        for (XiangqiMove mv : history) {
+            if (mv.captured != 0 && XiangqiBoard.color(mv.captured) == color) {
+                list.add(mv.captured);
+            }
+        }
+        return list;
+    }
+
+    /** 子力差：正数表示红方占优，负数表示黑方占优。 */
+    public int materialDiff() {
+        int redLost = 0;
+        int blackLost = 0;
+        for (XiangqiMove mv : history) {
+            if (mv.captured == 0) {
+                continue;
+            }
+            if (XiangqiBoard.color(mv.captured) == XiangqiBoard.RED) {
+                redLost += pieceValue(mv.captured);
+            } else {
+                blackLost += pieceValue(mv.captured);
+            }
+        }
+        return blackLost - redLost;
+    }
+
+    private static int pieceValue(int piece) {
+        return switch (XiangqiBoard.type(piece)) {
+            case XiangqiBoard.KING -> 0;
+            case XiangqiBoard.ROOK -> 9;
+            case XiangqiBoard.CANNON -> 4;
+            case XiangqiBoard.HORSE -> 4;
+            case XiangqiBoard.ELEPHANT, XiangqiBoard.ADVISOR -> 2;
+            case XiangqiBoard.PAWN -> 1;
+            default -> 0;
+        };
+    }
+
     public XiangqiMove moveAt(int index) {
         return history.get(index);
     }
@@ -106,13 +155,15 @@ public class XiangqiMatch {
         }
 
         int mover = turn;
+        String notation = XiangqiNotation.of(board, fr, fc, tr, tc);
         int captured = board.move(fr, fc, tr, tc);
         turn = XiangqiBoard.other(mover);
 
         boolean gaveCheck = XiangqiRules.inCheck(board, turn);
         boolean chase = !gaveCheck && XiangqiRules.isChase(board, mover, tr, tc);
 
-        XiangqiMove mv = new XiangqiMove(fr, fc, tr, tc, mover, captured, gaveCheck, chase);
+        XiangqiMove mv = new XiangqiMove(fr, fc, tr, tc, mover, captured, gaveCheck, chase,
+                notation + (gaveCheck ? "将" : ""));
         history.add(mv);
         noCapturePlies = captured == 0 ? noCapturePlies + 1 : 0;
 

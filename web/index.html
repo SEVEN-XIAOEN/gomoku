@@ -220,6 +220,11 @@
                     </select>
                 </label>
 
+                <div class="toolbar__buttons">
+                    <button id="xiangqi-flip" class="btn" type="button" title="黑方视角会自动翻转，也可以手动切换">翻转棋盘</button>
+                    <button id="xiangqi-sound" class="btn" type="button" title="开关落子、吃子与将军音效">音效：开</button>
+                </div>
+
                 <div class="toolbar__buttons solo-only">
                     <button id="xiangqi-new" class="btn btn--primary" type="button">新对局</button>
                     <button id="xiangqi-undo" class="btn" type="button">悔棋</button>
@@ -234,6 +239,8 @@
                     <button id="xiangqi-leave" class="btn in-room-only" type="button">离开</button>
                 </div>
             </section>
+
+            <div id="xiangqi-alert" class="game-alert" hidden></div>
 
             <div class="app__body">
                 <section class="board-wrap board-wrap--xiangqi">
@@ -269,7 +276,10 @@
                             </div>
                             <div class="stat pvp-only">
                                 <dt>房间码</dt>
-                                <dd id="xiangqi-room-display" class="room-code-display">—</dd>
+                                <dd class="room-code-row">
+                                    <span id="xiangqi-room-display" class="room-code-display">—</span>
+                                    <button id="xiangqi-copy-code" class="mini-btn" type="button">复制</button>
+                                </dd>
                             </div>
                             <div class="stat pvp-only">
                                 <dt>你的阵营</dt>
@@ -289,14 +299,47 @@
                         </li>
                     </ul>
 
+                    <div class="opponent-status pvp-only" id="xiangqi-opponent">
+                        <span class="opponent-status__dot" id="xiangqi-opponent-dot"></span>
+                        <span id="xiangqi-opponent-text">等待对手</span>
+                        <span class="opponent-status__hint" id="xiangqi-opponent-seen"></span>
+                    </div>
+
+                    <div class="panel__section captured-section">
+                        <div class="panel__title">吃子</div>
+                        <div class="captured-row">
+                            <span class="captured-row__label"><span class="side-dot side-dot--red"></span>红方被吃</span>
+                            <span class="captured-row__pieces" id="xiangqi-captured-red"></span>
+                        </div>
+                        <div class="captured-row">
+                            <span class="captured-row__label"><span class="side-dot side-dot--black"></span>黑方被吃</span>
+                            <span class="captured-row__pieces" id="xiangqi-captured-black"></span>
+                        </div>
+                        <p class="material-diff" id="xiangqi-material">子力差：0</p>
+                    </div>
+
+                    <div class="panel__section notation-section">
+                        <div class="panel__title">棋谱</div>
+                        <ol class="notation-list" id="xiangqi-notation"></ol>
+                        <p class="notation-empty" id="xiangqi-notation-empty">还没有走棋</p>
+                    </div>
+
                     <div class="panel__section room-actions pvp-only" id="xiangqi-room-actions" hidden>
                         <div class="button-row">
+                            <button id="xiangqi-undo-pvp" class="btn" type="button">申请悔棋</button>
                             <button id="xiangqi-resign" class="btn btn--danger" type="button">认输</button>
                             <button id="xiangqi-draw" class="btn" type="button">提和</button>
+                        </div>
+                        <div class="button-row" id="xiangqi-undo-answer" hidden>
+                            <button id="xiangqi-undo-accept" class="btn btn--primary" type="button">接受悔棋</button>
+                            <button id="xiangqi-undo-decline" class="btn" type="button">拒绝</button>
                         </div>
                         <div class="button-row" id="xiangqi-draw-answer" hidden>
                             <button id="xiangqi-draw-accept" class="btn btn--primary" type="button">接受和棋</button>
                             <button id="xiangqi-draw-decline" class="btn" type="button">拒绝</button>
+                        </div>
+                        <div class="button-row">
+                            <button id="xiangqi-copy-link" class="btn" type="button">复制邀请链接</button>
                         </div>
                         <button id="xiangqi-rematch" class="btn btn--primary" type="button" hidden>再来一盘</button>
                     </div>
@@ -306,8 +349,8 @@
                         规则、将军、将死、重复局面和计时都由服务端判定。悔棋会退回你跟电脑的上一回合。
                     </p>
                     <p class="hint pvp-only">
-                        创建房间后把 6 位房间码发给朋友。可自选红黑，双方都点「再来一盘」会交换红黑后重新开始。
-                        联机悔棋只能撤回自己刚走的一手。
+                        创建房间后把 6 位房间码或邀请链接发给朋友。执黑时棋盘会自动翻转；双方都点「再来一盘」会交换红黑后重新开始。
+                        联机悔棋需要对方同意，右侧会显示对手在线状态和待处理的悔棋申请。
                     </p>
                     <p class="hint">长将 / 长捉、三次重复局面、60 回合无吃子由服务端自动裁决；其中长捉采用工程化判定，不等同于官方裁判级细则。</p>
                 </aside>

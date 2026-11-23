@@ -368,7 +368,7 @@ select {
     margin-left: 0;
 }
 
-.room-code-input {
+.field__input.room-code-input {
     width: 122px;
     text-align: center;
     text-transform: uppercase;
@@ -875,6 +875,13 @@ select {
     }
 }
 
+/* 桌面端矮屏：让 9×10 棋盘完整落在首屏内，避免红方底排需要滚动才能点到。 */
+@media (min-width: 1001px) and (max-height: 900px) {
+    .board-wrap--xiangqi {
+        width: min(600px, calc((100vh - 300px) * 0.9));
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -918,7 +925,7 @@ select {
         flex: 1 1 0;
     }
 
-    .room-code-input {
+    .field__input.room-code-input {
         flex: 1 1 110px;
         width: auto;
     }
@@ -1006,5 +1013,317 @@ select {
 
     .toast {
         bottom: calc(18px + env(safe-area-inset-bottom));
+    }
+}
+
+/* ------------------------------ 象棋对局增强 ------------------------------ */
+
+.game-alert {
+    display: flex;
+    align-items: center;
+    margin: -2px 0 14px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+    border-radius: 12px;
+    color: var(--primary-dark);
+    background: var(--primary-soft);
+    border: 1px solid rgba(47, 111, 94, 0.28);
+}
+
+.game-alert[data-tone="check"] {
+    color: #8a2f14;
+    background: #fdece0;
+    border-color: rgba(180, 85, 46, 0.5);
+    animation: alert-pulse 1.3s ease-in-out infinite;
+}
+
+.game-alert[data-tone="win"] {
+    color: #1d5b49;
+    background: #e2f1e7;
+    border-color: rgba(47, 111, 94, 0.38);
+}
+
+.game-alert[data-tone="lose"] {
+    color: #8f3f20;
+    background: #f8e5de;
+    border-color: rgba(180, 85, 46, 0.4);
+}
+
+.game-alert[data-tone="info"] {
+    color: #6b5a33;
+    background: #f8f0dc;
+    border-color: rgba(196, 160, 78, 0.42);
+}
+
+@keyframes alert-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(180, 85, 46, 0);
+    }
+    50% {
+        box-shadow: 0 0 0 5px rgba(180, 85, 46, 0.10);
+    }
+}
+
+.mini-btn {
+    appearance: none;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    background: #eaf2ee;
+    border: 1px solid rgba(47, 111, 94, 0.28);
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.mini-btn:hover {
+    background: #dcebe4;
+    border-color: rgba(47, 111, 94, 0.45);
+}
+
+.mini-btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.room-code-row {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.side-dot--none {
+    background: transparent;
+    border: 1.5px dashed #c9bda2;
+}
+
+.btn.is-active {
+    border-color: rgba(47, 111, 94, 0.5);
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+}
+
+/* ------------------------------ 对手在线状态 ------------------------------ */
+
+.opponent-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 10px;
+    color: var(--ink-soft);
+    background: #f7f3ea;
+    border: 1px solid transparent;
+}
+
+.opponent-status__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: #c9bda2;
+}
+
+.opponent-status__hint {
+    margin-left: auto;
+    font-size: 12px;
+    color: #9a8f7e;
+    text-align: right;
+}
+
+.opponent-status.is-online {
+    background: #eaf4ee;
+    border-color: rgba(47, 111, 94, 0.18);
+}
+
+.opponent-status.is-online .opponent-status__dot {
+    background: #3f9b6f;
+    box-shadow: 0 0 0 3px rgba(63, 155, 111, 0.18);
+}
+
+.opponent-status.is-offline .opponent-status__dot {
+    background: #b3a695;
+}
+
+.opponent-status.is-waiting {
+    background: #fbf3df;
+    border-color: rgba(196, 160, 78, 0.22);
+}
+
+.opponent-status.is-waiting .opponent-status__dot {
+    background: #d9a13b;
+    box-shadow: 0 0 0 3px rgba(217, 161, 59, 0.18);
+}
+
+/* ------------------------------ 吃子与棋谱 ------------------------------ */
+
+.panel__title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+}
+
+.captured-section {
+    gap: 8px;
+}
+
+.captured-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+}
+
+.captured-row__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.captured-row__pieces {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    min-height: 22px;
+    min-width: 0;
+}
+
+.captured-piece {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, #fffdf4 0%, #f2e5c8 68%, #dcc49d 100%);
+    border: 1px solid rgba(140, 110, 70, 0.38);
+}
+
+.captured-piece.is-red {
+    color: var(--red);
+}
+
+.captured-piece.is-black {
+    color: #2b2620;
+}
+
+.captured-row__empty {
+    color: #bcb1a1;
+}
+
+.material-diff {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+}
+
+.notation-section {
+    gap: 8px;
+}
+
+.notation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 172px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    list-style: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.notation-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    padding: 3px 6px;
+    font-size: 13px;
+    border-radius: 7px;
+}
+
+.notation-row:nth-child(odd) {
+    background: #f9f6ee;
+}
+
+.notation-row__no {
+    text-align: right;
+    color: #a99d8b;
+}
+
+.notation-row__move {
+    min-width: 0;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.notation-row__move.is-latest {
+    font-weight: 700;
+    color: var(--primary-dark);
+    background: rgba(47, 111, 94, 0.12);
+    border-radius: 5px;
+    box-shadow: -3px 0 0 rgba(47, 111, 94, 0.12);
+}
+
+.notation-empty {
+    margin: 0;
+    font-size: 12.5px;
+    color: #a99d8b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .game-alert[data-tone="check"] {
+        animation: none;
+    }
+}
+
+@media (max-width: 520px) {
+    .game-alert {
+        margin: 0 0 12px;
+        padding: 9px 12px;
+        font-size: 13px;
+    }
+
+    .opponent-status {
+        padding: 7px 10px;
+        font-size: 12.5px;
+    }
+
+    .opponent-status__hint {
+        font-size: 11.5px;
+    }
+
+    .notation-list {
+        max-height: 140px;
+    }
+
+    .notation-row {
+        font-size: 12.5px;
+        grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .captured-piece {
+        width: 20px;
+        height: 20px;
+        font-size: 11.5px;
     }
 }

@@ -8,6 +8,8 @@ public abstract class Room {
 
     public static final int PLAYING = 0;
     public static final int FINISHED = 1;
+    /** 超过这个时间没有轮询，就视为对手暂时离线。 */
+    protected static final long ONLINE_WINDOW_MS = 6000;
 
     protected final String code;
     protected final String game;
@@ -21,7 +23,11 @@ public abstract class Room {
     protected String endReason = "";
     /** 0 = 无人提和，1/2 = 对应座位提和 */
     protected int drawOffer;
+    /** 0 = 没有悔棋申请，1/2 = 对应座位发起申请 */
+    protected int undoOffer;
     protected final boolean[] rematch = new boolean[3];
+    /** 每个座位最后一次被看到的时间，用于判断对手是否在线。 */
+    protected final long[] seatSeenAt = new long[3];
     protected long lastActive = System.currentTimeMillis();
 
     protected Room(String code, String game, long baseMs, long incrementMs) {
@@ -75,6 +81,10 @@ public abstract class Room {
         return drawOffer;
     }
 
+    public synchronized int undoOffer() {
+        return undoOffer;
+    }
+
     public synchronized boolean hasVotedRematch(int seat) {
         return seat >= 1 && seat <= 2 && rematch[seat];
     }
@@ -83,13 +93,23 @@ public abstract class Room {
         return System.currentTimeMillis() - lastActive;
     }
 
+    /** 记录某个座位刚刚活跃过。每次状态查询和操作都会调用。 */
+    public synchronized void seen(String sessionId) {
+        int seat = seatOf(sessionId);
+        if (seat != 0) {
+            seatSeenAt[seat] = System.currentTimeMillis();
+        }
+    }
+
     protected void touch() {
         lastActive = System.currentTimeMillis();
     }
 
     public synchronized boolean join(String sessionId, int preferredSeat) {
         touch();
-        if (seatOf(sessionId) != 0) {
+        int existing = seatOf(sessionId);
+        if (existing != 0) {
+            seatSeenAt[existing] = System.currentTimeMillis();
             return true;
         }
         boolean wasReady = ready();
@@ -110,6 +130,7 @@ public abstract class Room {
         } else {
             secondId = sessionId;
         }
+        seatSeenAt[seat] = System.currentTimeMillis();
         if (!wasReady && ready()) {
             beginNewMatch();
         }
@@ -134,6 +155,10 @@ public abstract class Room {
         } else {
             secondId = null;
         }
+        seatSeenAt[seat] = 0;
+        if (undoOffer == seat) {
+            undoOffer = 0;
+        }
         touch();
     }
 
@@ -150,6 +175,8 @@ public abstract class Room {
         status = FINISHED;
         winner = other(seat);
         endReason = "resign";
+        drawOffer = 0;
+        undoOffer = 0;
         if (clock != null) {
             clock.pause(System.currentTimeMillis());
         }
@@ -165,6 +192,9 @@ public abstract class Room {
         if (status != PLAYING) {
             throw new IllegalArgumentException("对局已经结束");
         }
+        if (undoOffer != 0) {
+            throw new IllegalArgumentException("请先处理悔棋申请");
+        }
         if ("offer".equals(action)) {
             if (drawOffer == seat) {
                 throw new IllegalArgumentException("你已经提和了，等待对方回应");
@@ -178,6 +208,7 @@ public abstract class Room {
             winner = 0;
             endReason = "draw_agreed";
             drawOffer = 0;
+            undoOffer = 0;
             if (clock != null) {
                 clock.pause(System.currentTimeMillis());
             }
@@ -208,6 +239,8 @@ public abstract class Room {
             String tmp = firstId;
             firstId = secondId;
             secondId = tmp;
+            seatSeenAt[1] = System.currentTimeMillis();
+            seatSeenAt[2] = System.currentTimeMillis();
             beginNewMatch();
         }
     }
@@ -220,6 +253,8 @@ public abstract class Room {
                 status = FINISHED;
                 winner = other(timeoutSeat);
                 endReason = "timeout";
+                drawOffer = 0;
+                undoOffer = 0;
                 clock.pause(now);
             }
         }
@@ -235,6 +270,7 @@ public abstract class Room {
         winner = 0;
         endReason = "";
         drawOffer = 0;
+        undoOffer = 0;
         rematch[1] = false;
         rematch[2] = false;
         resetMatch();
@@ -269,6 +305,14 @@ public abstract class Room {
     protected synchronized void appendCommon(StringBuilder sb, String sessionId) {
         checkTimeout(System.currentTimeMillis());
         int seat = seatOf(sessionId);
+        seen(sessionId);
+        long now = System.currentTimeMillis();
+        int otherSeat = seat == 0 ? 0 : other(seat);
+        String otherId = otherSeat == 1 ? firstId : (otherSeat == 2 ? secondId : null);
+        long otherSeen = otherSeat == 0 ? 0 : seatSeenAt[otherSeat];
+        boolean opponentOnline = otherId != null && otherSeen > 0 && now - otherSeen <= ONLINE_WINDOW_MS;
+        long opponentLastSeenMs = (otherId == null || otherSeen <= 0) ? -1 : Math.max(0, now - otherSeen);
+
         sb.append("\"game\":\"").append(Json.escape(game)).append('"');
         sb.append(",\"mode\":\"pvp\"");
         sb.append(",\"phase\":\"").append(phase()).append('"');
@@ -277,11 +321,16 @@ public abstract class Room {
         sb.append(",\"mySeat\":").append(seat);
         sb.append(",\"firstPresent\":").append(firstId != null);
         sb.append(",\"secondPresent\":").append(secondId != null);
+        sb.append(",\"opponentOnline\":").append(opponentOnline);
+        sb.append(",\"opponentLastSeenMs\":").append(opponentLastSeenMs);
         sb.append(",\"drawOffer\":").append(drawOffer);
+        sb.append(",\"undoOffer\":").append(undoOffer);
+        sb.append(",\"undoRequestSeat\":").append(undoOffer);
         sb.append(",\"rematchVotes\":[").append(rematch[1]).append(',').append(rematch[2]).append(']');
         sb.append(",\"clock\":").append(clockJson());
         sb.append(",\"serverNow\":").append(System.currentTimeMillis());
     }
+
     protected String clockJson() {
         return clock == null ? "null" : clock.toJson(System.currentTimeMillis());
     }

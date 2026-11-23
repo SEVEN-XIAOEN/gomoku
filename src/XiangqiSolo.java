@@ -178,6 +178,8 @@ public class XiangqiSolo {
         sb.append(",\"lastMove\":");
         appendMove(sb, match.lastMove());
         sb.append(",\"moves\":").append(match.historySize());
+        appendHistory(sb);
+        appendCaptured(sb);
         sb.append(",\"difficulty\":").append(difficulty);
         sb.append(",\"aiMillis\":").append(aiMillis);
         sb.append(",\"message\":\"").append(Json.escape(message)).append('"');
@@ -199,7 +201,39 @@ public class XiangqiSolo {
                 .append(",\"tr\":").append(mv.tr)
                 .append(",\"tc\":").append(mv.tc)
                 .append(",\"color\":").append(mv.color)
-                .append(",\"check\":").append(mv.check).append('}');
+                .append(",\"captured\":").append(mv.captured)
+                .append(",\"check\":").append(mv.check)
+                .append(",\"notation\":\"").append(Json.escape(mv.notation)).append('"')
+                .append('}');
+    }
+
+    private void appendHistory(StringBuilder sb) {
+        sb.append(",\"history\":[");
+        List<String> notation = match.notationHistory();
+        for (int i = 0; i < notation.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append('"').append(Json.escape(notation.get(i))).append('"');
+        }
+        sb.append(']');
+    }
+
+    private void appendCaptured(StringBuilder sb) {
+        appendPieces(sb, "capturedRed", match.capturedPieces(XiangqiBoard.RED));
+        appendPieces(sb, "capturedBlack", match.capturedPieces(XiangqiBoard.BLACK));
+        sb.append(",\"materialDiff\":").append(match.materialDiff());
+    }
+
+    private void appendPieces(StringBuilder sb, String name, List<Integer> pieces) {
+        sb.append(",\"").append(name).append("\":[");
+        for (int i = 0; i < pieces.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(pieces.get(i));
+        }
+        sb.append(']');
     }
 
     private void aiMove() {

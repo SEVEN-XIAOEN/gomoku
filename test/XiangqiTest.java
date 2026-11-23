@@ -31,6 +31,7 @@ public class XiangqiTest {
         testInsufficientMaterial();
         testAiProducesLegalMove();
         testRoomFlow();
+        testCaptureBookkeeping();
         testTimeoutBlocksMove();
         testSoloAiReplyAndUndo();
 
@@ -252,16 +253,51 @@ public class XiangqiTest {
                 room.seatOf("red-player") == XiangqiBoard.RED
                         && room.seatOf("black-player") == XiangqiBoard.BLACK);
 
-        room.move("red-player", 7, 1, 7, 4);
+        room.move("red-player", 7, 7, 7, 4);
         String json = room.stateJson("black-player");
         check("象棋联机走子后切换轮次", json.contains("\"turn\":2") && json.contains("\"moves\":1"));
-        check("象棋联机不能替对手悔棋",
+        check("象棋联机状态带中文棋谱", json.contains("炮二平五"));
+        check("象棋联机状态带对手在线标记", json.contains("\"opponentOnline\":true"));
+
+        check("象棋联机不能替对手申请悔棋",
                 throwsIllegalArgument(() -> room.undo("black-player")));
+
         room.undo("red-player");
-        check("象棋联机可以撤回自己刚走的一手",
+        String offered = room.stateJson("black-player");
+        check("联机悔棋只登记申请、不立即撤棋",
+                offered.contains("\"moves\":1") && offered.contains("\"undoOffer\":1"));
+
+        room.answerUndo("black-player", "decline");
+        String declined = room.stateJson("black-player");
+        check("拒绝悔棋后申请清空且盘面不变",
+                declined.contains("\"undoOffer\":0") && declined.contains("\"moves\":1"));
+
+        room.undo("red-player");
+        room.answerUndo("black-player", "accept");
+        check("同意悔棋后才真正撤回一手",
                 room.stateJson("red-player").contains("\"moves\":0"));
     }
 
+    private static void testCaptureBookkeeping() {
+        XiangqiMatch match = new XiangqiMatch();
+        XiangqiBoard b = match.board();
+        for (int r = 0; r < XiangqiBoard.ROWS; r++) {
+            for (int c = 0; c < XiangqiBoard.COLS; c++) {
+                b.set(r, c, XiangqiBoard.EMPTY);
+            }
+        }
+        b.set(0, 3, XiangqiBoard.piece(XiangqiBoard.BLACK, XiangqiBoard.KING));
+        b.set(9, 4, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.KING));
+        b.set(5, 4, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.CANNON));
+        b.set(5, 5, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.PAWN));
+        b.set(5, 6, XiangqiBoard.piece(XiangqiBoard.BLACK, XiangqiBoard.PAWN));
+
+        match.move(5, 4, 5, 6);
+        check("吃子后记录被吃的黑方棋子", match.capturedPieces(XiangqiBoard.BLACK).size() == 1
+                && match.capturedPieces(XiangqiBoard.RED).isEmpty());
+        check("吃子后红方子力占优", match.materialDiff() > 0);
+        check("吃子着法带中文记谱", "炮五平三".equals(match.notationHistory().get(0)));
+    }
     private static void testTimeoutBlocksMove() {
         XiangqiRoom room = new XiangqiRoom("XQ9999", 30, 0);
         room.join("red-player", 1);

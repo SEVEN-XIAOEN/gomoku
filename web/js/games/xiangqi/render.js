@@ -1,6 +1,8 @@
 /* ------------------------------------------------------------------
    中国象棋 Canvas 渲染器（纯展示）
-   9 列 × 10 行，红方固定显示在下方。棋子编码 = 颜色 * 10 + 类型。
+   9 列 × 10 行。默认红方在下方；opts.flip 为 true 时旋转 180°，
+   让黑方棋子显示在屏幕下方（只影响显示，不影响逻辑坐标）。
+   棋子编码 = 颜色 * 10 + 类型。
    ------------------------------------------------------------------ */
 (function () {
     'use strict';
@@ -25,6 +27,9 @@
         var metrics = null;
         var state = null;
         var opts = {};
+        var anim = null;
+        var seenMoves = -1;
+        var ANIM_MS = 180;
 
         function layout() {
             var rect = canvas.getBoundingClientRect();
@@ -55,6 +60,10 @@
         }
 
         function pointOf(r, c) {
+            if (opts.flip) {
+                r = 9 - r;
+                c = 8 - c;
+            }
             return {
                 x: metrics.padX + c * metrics.cell,
                 y: metrics.padY + r * metrics.cell
@@ -152,12 +161,17 @@
 
         function drawRiver() {
             var y = (pointOf(4, 0).y + pointOf(5, 0).y) / 2;
-            riverText('楚河', (pointOf(0, 1).x + pointOf(0, 3).x) / 2, y);
-            riverText('汉界', (pointOf(0, 5).x + pointOf(0, 7).x) / 2, y);
+            // 翻转视角时两个河界文字交换位置，仍然保持正向可读。
+            riverText(opts.flip ? '汉界' : '楚河', (pointOf(0, 1).x + pointOf(0, 3).x) / 2, y);
+            riverText(opts.flip ? '楚河' : '汉界', (pointOf(0, 5).x + pointOf(0, 7).x) / 2, y);
         }
 
         function drawPiece(r, c, piece) {
             var pos = pointOf(r, c);
+            drawPieceAt(pos.x, pos.y, piece);
+        }
+
+        function drawPieceAt(x, y, piece) {
             var radius = metrics.cell * 0.43;
             var color = colorOf(piece);
 
@@ -167,14 +181,14 @@
             ctx.shadowOffsetY = metrics.cell * 0.06;
 
             var body = ctx.createRadialGradient(
-                pos.x - radius * 0.35, pos.y - radius * 0.38, radius * 0.1,
-                pos.x, pos.y, radius
+                x - radius * 0.35, y - radius * 0.38, radius * 0.1,
+                x, y, radius
             );
             body.addColorStop(0, '#fffdf4');
             body.addColorStop(0.62, '#f5e7c6');
             body.addColorStop(1, '#dfc69a');
             ctx.beginPath();
-            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fillStyle = body;
             ctx.fill();
 
@@ -187,7 +201,7 @@
             ctx.stroke();
 
             ctx.beginPath();
-            ctx.arc(pos.x, pos.y, radius * 0.84, 0, Math.PI * 2);
+            ctx.arc(x, y, radius * 0.84, 0, Math.PI * 2);
             ctx.lineWidth = 1;
             ctx.strokeStyle = color === 1 ? 'rgba(168, 52, 38, 0.45)' : 'rgba(40, 36, 30, 0.4)';
             ctx.stroke();
@@ -196,19 +210,38 @@
             ctx.font = '700 ' + (metrics.cell * 0.52) + 'px "KaiTi","STKaiti","SimSun",serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(LABELS[color][typeOf(piece)] || '?', pos.x, pos.y + metrics.cell * 0.02);
+            ctx.fillText(LABELS[color][typeOf(piece)] || '?', x, y + metrics.cell * 0.02);
             ctx.restore();
         }
 
         function drawPieces() {
             for (var r = 0; r < 10; r++) {
                 for (var c = 0; c < 9; c++) {
+                    // 正在做位移动画的棋子，等所有静态棋子画完后再按插值位置绘制。
+                    if (anim && r === anim.tr && c === anim.tc) {
+                        continue;
+                    }
                     var piece = state.board[r][c];
                     if (piece) {
                         drawPiece(r, c, piece);
                     }
                 }
             }
+        }
+
+        function drawMovingPiece() {
+            if (!anim || !anim.piece) {
+                return;
+            }
+            var progress = Math.min(1, (performance.now() - anim.start) / ANIM_MS);
+            var ease = 1 - Math.pow(1 - progress, 3);
+            var from = pointOf(anim.fr, anim.fc);
+            var to = pointOf(anim.tr, anim.tc);
+            drawPieceAt(
+                from.x + (to.x - from.x) * ease,
+                from.y + (to.y - from.y) * ease,
+                anim.piece
+            );
         }
 
         function cornerMarks(r, c, color) {
@@ -328,6 +361,54 @@
             drawSelection();
             drawLegalMoves();
             drawHighlights();
+            drawMovingPiece();
+        }
+
+        function animateTick() {
+            if (!anim) {
+                return;
+            }
+            if (performance.now() - anim.start >= ANIM_MS) {
+                anim = null;
+                drawBoard();
+                return;
+            }
+            drawBoard();
+            requestAnimationFrame(animateTick);
+        }
+
+        function syncAnimation() {
+            var moves = state.moves || 0;
+            var last = state.lastMove;
+            if (seenMoves < 0) {
+                // 首次进入页面不播放历史最后一手的动画。
+                seenMoves = moves;
+                return;
+            }
+            if (!last || moves < seenMoves) {
+                anim = null;
+                seenMoves = moves;
+                return;
+            }
+            if (moves === seenMoves || opts.animate === false) {
+                seenMoves = moves;
+                return;
+            }
+            var key = [last.fr, last.fc, last.tr, last.tc, last.color, moves].join(',');
+            var piece = state.board[last.tr] && state.board[last.tr][last.tc];
+            if (piece && (!anim || anim.key !== key)) {
+                anim = {
+                    key: key,
+                    fr: last.fr,
+                    fc: last.fc,
+                    tr: last.tr,
+                    tc: last.tc,
+                    piece: piece,
+                    start: performance.now()
+                };
+                requestAnimationFrame(animateTick);
+            }
+            seenMoves = moves;
         }
 
         function draw(nextState, nextOpts) {
@@ -336,6 +417,7 @@
             }
             state = nextState;
             opts = nextOpts || {};
+            syncAnimation();
             drawBoard();
         }
 
@@ -346,11 +428,13 @@
             var rect = canvas.getBoundingClientRect();
             var x = clientX - rect.left;
             var y = clientY - rect.top;
-            var c = Math.round((x - metrics.padX) / metrics.cell);
-            var r = Math.round((y - metrics.padY) / metrics.cell);
-            if (r < 0 || c < 0 || r >= 10 || c >= 9) {
+            var visualC = Math.round((x - metrics.padX) / metrics.cell);
+            var visualR = Math.round((y - metrics.padY) / metrics.cell);
+            if (visualR < 0 || visualC < 0 || visualR >= 10 || visualC >= 9) {
                 return null;
             }
+            var c = opts.flip ? 8 - visualC : visualC;
+            var r = opts.flip ? 9 - visualR : visualR;
             var pos = pointOf(r, c);
             var distance = Math.hypot(pos.x - x, pos.y - y);
             return distance <= metrics.cell * 0.5 ? { r: r, c: c } : null;
