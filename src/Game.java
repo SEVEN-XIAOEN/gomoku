@@ -106,7 +106,10 @@ public class Game {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
 
-        sb.append("\"mode\":\"solo\"");
+        sb.append("\"game\":\"gomoku\"");
+        sb.append(",\"mode\":\"solo\"");
+        sb.append(",\"phase\":\"playing\"");
+        sb.append(",\"room\":null");
         sb.append(",\"size\":").append(board.size());
 
         sb.append(",\"board\":[");
@@ -143,6 +146,9 @@ public class Game {
         sb.append(",\"difficulty\":").append(difficulty);
         sb.append(",\"message\":\"").append(Json.escape(message)).append('"');
         sb.append(",\"aiMillis\":").append(aiMillis);
+        sb.append(",\"clock\":null");
+        sb.append(",\"drawOffer\":0");
+        sb.append(",\"rematchVotes\":[false,false]");
 
         sb.append(",\"winLine\":");
         if (winLine == null) {

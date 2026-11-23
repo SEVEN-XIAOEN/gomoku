@@ -19,17 +19,10 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 网页五子棋的后端服务。
+ * 棋类对战平台后端：五子棋 + 中国象棋。
  *
- * <p>只用 JDK 自带的 com.sun.net.httpserver.HttpServer，不依赖任何第三方库，
- * 所以不需要 Maven / Gradle，用 javac 编译后直接 java 运行即可。</p>
- *
- * <p>它做三件事：</p>
- * <ul>
- *   <li>把 web 目录下的 HTML / CSS / JS 发给浏览器；</li>
- *   <li>用 Cookie 区分浏览器，让每个人的人机局互不干扰；</li>
- *   <li>提供房间接口，让两名玩家通过房间码下同一盘棋。</li>
- * </ul>
+ * <p>仍然只用 JDK 自带的 HttpServer，零第三方依赖。服务端是唯一裁判：
+ * 走法生成、胜负、将军、重复局面、计时全部在后端完成，前端只负责渲染。</p>
  */
 public class GomokuServer {
 
@@ -37,10 +30,10 @@ public class GomokuServer {
     private static final String ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final long SESSION_TTL_MILLIS = TimeUnit.HOURS.toMillis(24);
 
-    /** 每个浏览器会话各自有一局人机棋。 */
+    /** 每个浏览器会话各自的人机棋局。 */
     private static final Map<String, Session> SESSIONS = new ConcurrentHashMap<>();
-    /** 双人房间按房间码共享。 */
-    private static final Map<String, PvpRoom> ROOMS = new ConcurrentHashMap<>();
+    /** 双人房间按房间码共享，五子棋和象棋共用一张表。 */
+    private static final Map<String, Room> ROOMS = new ConcurrentHashMap<>();
 
     public static void main(String[] args) throws IOException {
         int port = resolvePort(args);
@@ -48,83 +41,188 @@ public class GomokuServer {
 
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
 
-        // ------------------------- 会话与模式 -------------------------
-        server.createContext("/api/state", exchange ->
+        // ------------------------- 平台与大厅 -------------------------
+        server.createContext("/api/games", exchange ->
+                guard(exchange, "GET", session -> gamesJson()));
+
+        server.createContext("/api/session/state", exchange ->
                 guard(exchange, "GET", GomokuServer::stateFor));
 
-        server.createContext("/api/mode", exchange ->
+        server.createContext("/api/session/game", exchange ->
+                guard(exchange, "POST", session -> {
+                    String game = Json.getString(readBody(exchange), "game");
+                    if (!"lobby".equals(game) && !"gomoku".equals(game) && !"xiangqi".equals(game)) {
+                        throw new IllegalArgumentException("game 只能是 lobby / gomoku / xiangqi");
+                    }
+                    if (!game.equals(session.currentGame)) {
+                        leaveCurrentRoom(session);
+                    }
+                    session.currentGame = game;
+                    return stateFor(session);
+                }));
+
+        server.createContext("/api/gomoku/mode", exchange ->
                 guard(exchange, "POST", session -> {
                     String mode = Json.getString(readBody(exchange), "mode");
                     if (!"solo".equals(mode) && !"pvp".equals(mode)) {
                         throw new IllegalArgumentException("mode 只能是 solo 或 pvp");
                     }
-                    if ("solo".equals(mode)) {
-                        leaveCurrentRoom(session);
+                    leaveCurrentRoom(session);
+                    session.currentGame = "gomoku";
+                    return "solo".equals(mode) ? session.gomokuSolo.toJson() : roomLobbyJson("gomoku");
+                }));
+
+        server.createContext("/api/xiangqi/mode", exchange ->
+                guard(exchange, "POST", session -> {
+                    String mode = Json.getString(readBody(exchange), "mode");
+                    if (!"solo".equals(mode) && !"pvp".equals(mode)) {
+                        throw new IllegalArgumentException("mode 只能是 solo 或 pvp");
                     }
-                    session.mode = mode;
-                    return stateFor(session);
+                    leaveCurrentRoom(session);
+                    session.currentGame = "xiangqi";
+                    return "solo".equals(mode) ? session.xiangqiSolo.toJson() : roomLobbyJson("xiangqi");
                 }));
+        // ------------------------- 五子棋人机 -------------------------
+        server.createContext("/api/gomoku/state", exchange ->
+                guard(exchange, "GET", session -> session.gomokuSolo.toJson()));
 
-        // ------------------------- 人机模式（每个会话独立） -------------------------
-        server.createContext("/api/new", exchange ->
+        server.createContext("/api/gomoku/new", exchange ->
                 guard(exchange, "POST", session -> {
-                    int boardSize = readBoardSize(readBody(exchange));
-                    session.mode = "solo";
-                    session.solo.newGame(boardSize);
-                    return session.solo.toJson();
+                    int size = readBoardSize(readBody(exchange));
+                    leaveCurrentRoom(session);
+                    session.currentGame = "gomoku";
+                    session.gomokuSolo.newGame(size);
+                    return session.gomokuSolo.toJson();
                 }));
 
-        server.createContext("/api/move", exchange ->
+        server.createContext("/api/gomoku/move", exchange ->
                 guard(exchange, "POST", session -> {
-                    String body = readBody(exchange);
-                    int[] move = readMove(body);
-                    session.solo.playerMove(move[0], move[1]);
-                    return session.solo.toJson();
+                    int[] move = readGomokuMove(readBody(exchange));
+                    session.gomokuSolo.playerMove(move[0], move[1]);
+                    return session.gomokuSolo.toJson();
                 }));
 
-        server.createContext("/api/undo", exchange ->
+        server.createContext("/api/gomoku/undo", exchange ->
                 guard(exchange, "POST", session -> {
-                    session.solo.undo();
-                    return session.solo.toJson();
+                    session.gomokuSolo.undo();
+                    return session.gomokuSolo.toJson();
                 }));
 
-        server.createContext("/api/difficulty", exchange ->
+        server.createContext("/api/gomoku/difficulty", exchange ->
                 guard(exchange, "POST", session -> {
                     Integer level = Json.getInt(readBody(exchange), "level");
                     if (level == null) {
                         throw new IllegalArgumentException("缺少难度参数 level");
                     }
-                    session.solo.setDifficulty(level);
-                    return session.solo.toJson();
+                    session.gomokuSolo.setDifficulty(level);
+                    return session.gomokuSolo.toJson();
                 }));
 
-        // ------------------------- 双人模式（房间码） -------------------------
-        server.createContext("/api/pvp/create", exchange ->
+        // ------------------------- 象棋人机 -------------------------
+        server.createContext("/api/xiangqi/state", exchange ->
+                guard(exchange, "GET", session -> session.xiangqiSolo.toJson()));
+
+        server.createContext("/api/xiangqi/new", exchange ->
                 guard(exchange, "POST", session -> {
-                    int boardSize = readBoardSize(readBody(exchange));
+                    String body = readBody(exchange);
+                    int side = intOr(body, "side", 0);
+                    int level = intOr(body, "level", 2);
+                    int minutes = intOr(body, "minutes", 10);
+                    int increment = intOr(body, "increment", 5);
+                    validateTime(minutes, increment);
+                    leaveCurrentRoom(session);
+                    session.currentGame = "xiangqi";
+                    session.xiangqiSolo.newGame(side, level, minutes * 60_000L, increment * 1000L);
+                    return session.xiangqiSolo.toJson();
+                }));
+
+        server.createContext("/api/xiangqi/move", exchange ->
+                guard(exchange, "POST", session -> {
+                    int[] move = readXiangqiMove(readBody(exchange));
+                    session.xiangqiSolo.move(move[0], move[1], move[2], move[3]);
+                    return session.xiangqiSolo.toJson();
+                }));
+
+        server.createContext("/api/xiangqi/undo", exchange ->
+                guard(exchange, "POST", session -> {
+                    session.xiangqiSolo.undo();
+                    return session.xiangqiSolo.toJson();
+                }));
+
+        server.createContext("/api/xiangqi/difficulty", exchange ->
+                guard(exchange, "POST", session -> {
+                    Integer level = Json.getInt(readBody(exchange), "level");
+                    if (level == null) {
+                        throw new IllegalArgumentException("缺少难度参数 level");
+                    }
+                    session.xiangqiSolo.setDifficulty(level);
+                    return session.xiangqiSolo.toJson();
+                }));
+
+        server.createContext("/api/xiangqi/legal", exchange ->
+                guard(exchange, "POST", session -> {
+                    String body = readBody(exchange);
+                    Integer r = Json.getInt(body, "r");
+                    Integer c = Json.getInt(body, "c");
+                    if (r == null || c == null) {
+                        throw new IllegalArgumentException("缺少坐标 r / c");
+                    }
+                    return session.xiangqiSolo.legalJson(r, c);
+                }));
+
+        server.createContext("/api/xiangqi/resign", exchange ->
+                guard(exchange, "POST", session -> {
+                    session.xiangqiSolo.resign();
+                    return session.xiangqiSolo.toJson();
+                }));
+
+        // ------------------------- 联机房间 -------------------------
+        server.createContext("/api/rooms/create", exchange ->
+                guard(exchange, "POST", session -> {
+                    String body = readBody(exchange);
+                    String game = Json.getString(body, "game");
+                    if (!"gomoku".equals(game) && !"xiangqi".equals(game)) {
+                        throw new IllegalArgumentException("game 只能是 gomoku 或 xiangqi");
+                    }
+                    int requestedSeat = intOr(body, "seat", 0);
+                    if (requestedSeat < 0 || requestedSeat > 2) {
+                        throw new IllegalArgumentException("seat 只能是 0 / 1 / 2");
+                    }
+                    int seat = requestedSeat == 0
+                            ? (ThreadLocalRandom.current().nextBoolean() ? 1 : 2)
+                            : requestedSeat;
+                    int minutes = intOr(body, "minutes", 0);
+                    int increment = intOr(body, "increment", 0);
+                    validateTime(minutes, increment);
+                    long baseMs = minutes * 60_000L;
+                    long incMs = increment * 1000L;
+
                     leaveCurrentRoom(session);
 
-                    PvpRoom room;
+                    Room room;
                     String code;
                     do {
                         code = randomRoomCode();
-                        room = new PvpRoom(code, boardSize);
+                        room = "gomoku".equals(game)
+                                ? new GomokuRoom(code, readBoardSize(body), baseMs, incMs)
+                                : new XiangqiRoom(code, baseMs, incMs);
                     } while (ROOMS.putIfAbsent(code, room) != null);
 
-                    room.join(session.id);
+                    room.join(session.id, seat);
                     session.roomCode = code;
-                    session.mode = "pvp";
-                    return room.toJson(session.id);
+                    session.currentGame = game;
+                    return room.stateJson(session.id);
                 }));
 
-        server.createContext("/api/pvp/join", exchange ->
+        server.createContext("/api/rooms/join", exchange ->
                 guard(exchange, "POST", session -> {
-                    String code = Json.getString(readBody(exchange), "room");
+                    String body = readBody(exchange);
+                    String code = Json.getString(body, "room");
                     if (code == null || code.isBlank()) {
                         throw new IllegalArgumentException("请输入房间码");
                     }
                     code = code.trim().toUpperCase();
-                    PvpRoom room = ROOMS.get(code);
+                    Room room = ROOMS.get(code);
                     if (room == null) {
                         throw new IllegalArgumentException("房间不存在或已经关闭");
                     }
@@ -132,48 +230,110 @@ public class GomokuServer {
                     if (!code.equals(session.roomCode)) {
                         leaveCurrentRoom(session);
                     }
-                    if (!room.join(session.id)) {
+                    if (!room.join(session.id, intOr(body, "seat", 0))) {
                         throw new IllegalArgumentException("房间已满");
                     }
                     session.roomCode = code;
-                    session.mode = "pvp";
-                    return room.toJson(session.id);
+                    session.currentGame = room.game();
+                    return room.stateJson(session.id);
                 }));
 
-        server.createContext("/api/pvp/move", exchange ->
+        server.createContext("/api/rooms/state", exchange ->
+                guard(exchange, "GET", session -> requireRoom(session).stateJson(session.id)));
+
+        server.createContext("/api/rooms/move", exchange ->
                 guard(exchange, "POST", session -> {
-                    PvpRoom room = requireRoom(session);
-                    int[] move = readMove(readBody(exchange));
-                    room.move(session.id, move[0], move[1]);
-                    return room.toJson(session.id);
+                    Room room = requireRoom(session);
+                    String body = readBody(exchange);
+                    if ("gomoku".equals(room.game())) {
+                        int[] move = readGomokuMove(body);
+                        room.move(session.id, move[0], move[1], 0, 0);
+                    } else {
+                        int[] move = readXiangqiMove(body);
+                        room.move(session.id, move[0], move[1], move[2], move[3]);
+                    }
+                    return room.stateJson(session.id);
                 }));
 
-        server.createContext("/api/pvp/undo", exchange ->
+        server.createContext("/api/rooms/undo", exchange ->
                 guard(exchange, "POST", session -> {
-                    PvpRoom room = requireRoom(session);
+                    Room room = requireRoom(session);
                     room.undo(session.id);
-                    return room.toJson(session.id);
+                    return room.stateJson(session.id);
                 }));
 
-        server.createContext("/api/pvp/new", exchange ->
+        server.createContext("/api/rooms/resign", exchange ->
                 guard(exchange, "POST", session -> {
-                    PvpRoom room = requireRoom(session);
-                    room.newGame();
-                    return room.toJson(session.id);
+                    Room room = requireRoom(session);
+                    room.resign(session.id);
+                    return room.stateJson(session.id);
                 }));
 
-        server.createContext("/api/pvp/leave", exchange ->
+        server.createContext("/api/rooms/draw", exchange ->
+                guard(exchange, "POST", session -> {
+                    Room room = requireRoom(session);
+                    String action = Json.getString(readBody(exchange), "action");
+                    if (action == null) {
+                        throw new IllegalArgumentException("缺少 action");
+                    }
+                    room.draw(session.id, action);
+                    return room.stateJson(session.id);
+                }));
+
+        server.createContext("/api/rooms/rematch", exchange ->
+                guard(exchange, "POST", session -> {
+                    Room room = requireRoom(session);
+                    room.rematch(session.id);
+                    return room.stateJson(session.id);
+                }));
+
+        server.createContext("/api/rooms/legal", exchange ->
+                guard(exchange, "POST", session -> {
+                    Room room = requireRoom(session);
+                    if (!(room instanceof XiangqiRoom xiangqi)) {
+                        throw new IllegalArgumentException("只有象棋需要请求合法落点");
+                    }
+                    String body = readBody(exchange);
+                    Integer r = Json.getInt(body, "r");
+                    Integer c = Json.getInt(body, "c");
+                    if (r == null || c == null) {
+                        throw new IllegalArgumentException("缺少坐标 r / c");
+                    }
+                    return xiangqi.legalJson(session.id, r, c);
+                }));
+        server.createContext("/api/rooms/leave", exchange ->
                 guard(exchange, "POST", session -> {
                     leaveCurrentRoom(session);
-                    session.mode = "pvp";
-                    return lobbyJson();
+                    return stateFor(session);
                 }));
 
         // ------------------------- 静态页面 -------------------------
-        // 注意：HttpServer 会按最长前缀匹配，所以 /api/* 不会被这里抢走
         server.createContext("/", new StaticHandler(webRoot));
 
         server.setExecutor(Executors.newFixedThreadPool(8));
+
+        ScheduledExecutorService ticker = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "game-ticker");
+            thread.setDaemon(true);
+            return thread;
+        });
+        ticker.scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            for (Room room : ROOMS.values()) {
+                try {
+                    room.tick(now);
+                } catch (RuntimeException ignored) {
+                    // 单房间异常不能拖垮整个定时器
+                }
+            }
+            for (Session session : SESSIONS.values()) {
+                try {
+                    session.xiangqiSolo.tick(now);
+                } catch (RuntimeException ignored) {
+                    // 同上
+                }
+            }
+        }, 200, 200, TimeUnit.MILLISECONDS);
 
         ScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "gomoku-cleanup");
@@ -185,7 +345,7 @@ public class GomokuServer {
         server.start();
 
         System.out.println("=========================================");
-        System.out.println(" 网页五子棋已启动");
+        System.out.println(" 棋类对战平台已启动：五子棋 + 中国象棋");
         System.out.println(" 浏览器打开： http://localhost:" + port);
         System.out.println(" 静态文件目录：" + webRoot);
         System.out.println(" 按 Ctrl + C 停止服务");
@@ -195,16 +355,12 @@ public class GomokuServer {
         }
     }
 
-    /**
-     * 端口来源的优先级：命令行参数 &gt; 环境变量 PORT &gt; 默认 8080。
-     * 云平台（Render、Railway 等）通常通过 PORT 环境变量指定端口。
-     */
     private static int resolvePort(String[] args) {
         if (args.length > 0) {
             try {
                 return Integer.parseInt(args[0].trim());
             } catch (NumberFormatException ignored) {
-                // 参数写得不对就继续往下找
+                // 继续读环境变量
             }
         }
         String envPort = System.getenv("PORT");
@@ -218,16 +374,11 @@ public class GomokuServer {
         return 8080;
     }
 
-    /** 一个可能抛异常的业务处理动作，用来配合 guard 统一处理错误。 */
     @FunctionalInterface
     private interface ApiCall {
         String run(Session session) throws Exception;
     }
 
-    /**
-     * 统一入口：识别浏览器会话、处理跨域、校验请求方法、把异常转成 JSON。
-     * Cookie 让同一个浏览器的多次请求找到同一局人机棋。
-     */
     private static void guard(HttpExchange exchange, String method, ApiCall call) throws IOException {
         try {
             if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
@@ -244,7 +395,6 @@ public class GomokuServer {
                     COOKIE_NAME + "=" + session.id + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + (30 * 24 * 60 * 60));
             respondJson(exchange, 200, call.run(session));
         } catch (IllegalArgumentException e) {
-            // 参数不合法：属于客户端的问题，返回 400
             respondJson(exchange, 400, "{\"error\":\"" + Json.escape(e.getMessage()) + "\"}");
         } catch (Exception e) {
             e.printStackTrace();
@@ -254,59 +404,84 @@ public class GomokuServer {
         }
     }
 
-    /** 当前会话应该看到的页面状态：人机局，或它所在的双人房间。 */
+    /** 当前会话应该看到的页面状态：所在房间 &gt; 当前游戏人机局 &gt; 大厅。 */
     private static String stateFor(Session session) {
-        if (!"pvp".equals(session.mode)) {
-            return session.solo.toJson();
-        }
-        PvpRoom room = session.roomCode == null ? null : ROOMS.get(session.roomCode);
-        if (room == null) {
+        if (session.roomCode != null) {
+            Room room = ROOMS.get(session.roomCode);
+            if (room != null) {
+                return room.stateJson(session.id);
+            }
             session.roomCode = null;
-            return lobbyJson();
         }
-        return room.toJson(session.id);
+        if ("gomoku".equals(session.currentGame)) {
+            return session.gomokuSolo.toJson();
+        }
+        if ("xiangqi".equals(session.currentGame)) {
+            return session.xiangqiSolo.toJson();
+        }
+        return lobbyJson();
     }
 
     private static String lobbyJson() {
-        StringBuilder sb = new StringBuilder();
-        sb.append('{');
-        sb.append("\"mode\":\"pvp\"");
-        sb.append(",\"phase\":\"lobby\"");
-        sb.append(",\"room\":null");
-        sb.append(",\"size\":15");
-        sb.append(",\"board\":");
-        appendEmptyBoard(sb, 15);
-        sb.append(",\"status\":\"playing\"");
-        sb.append(",\"turn\":0");
-        sb.append(",\"myColor\":0");
-        sb.append(",\"blackPresent\":false");
-        sb.append(",\"whitePresent\":false");
-        sb.append(",\"moves\":0");
-        sb.append(",\"lastMove\":null");
-        sb.append(",\"message\":\"创建或加入一个房间\"");
-        sb.append(",\"winLine\":null");
-        sb.append('}');
-        return sb.toString();
+        return "{\"game\":\"lobby\",\"mode\":\"lobby\",\"phase\":\"lobby\","
+                + "\"message\":\"请选择要玩的游戏\",\"room\":null}";
     }
 
-    private static void appendEmptyBoard(StringBuilder sb, int size) {
-        sb.append('[');
-        for (int r = 0; r < size; r++) {
-            if (r > 0) {
-                sb.append(',');
-            }
-            sb.append('[');
-            for (int c = 0; c < size; c++) {
-                if (c > 0) {
+    private static String gamesJson() {
+        return "{\"games\":["
+                + "{\"id\":\"gomoku\",\"name\":\"五子棋\",\"players\":\"1-2 人\","
+                + "\"tagline\":\"先连成五子者获胜，支持人机与联机\"},"
+                + "{\"id\":\"xiangqi\",\"name\":\"中国象棋\",\"players\":\"1-2 人\","
+                + "\"tagline\":\"完整走子规则、将军判定、计时与联机对战\"}"
+                + "]}";
+    }
+
+    /** 进入双人模式但还没建房时的空棋盘状态。 */
+    private static String roomLobbyJson(String game) {
+        StringBuilder sb = new StringBuilder(512);
+        sb.append('{');
+        sb.append("\"game\":\"").append(game).append('"');
+        sb.append(",\"mode\":\"pvp\",\"phase\":\"lobby\",\"room\":null");
+        sb.append(",\"myColor\":0,\"mySeat\":0,\"firstPresent\":false,\"secondPresent\":false");
+        sb.append(",\"status\":\"playing\",\"turn\":0,\"moves\":0,\"lastMove\":null,\"winLine\":null");
+        sb.append(",\"clock\":null,\"drawOffer\":0,\"rematchVotes\":[false,false]");
+        sb.append(",\"message\":\"创建或加入一个房间\"");
+        if ("xiangqi".equals(game)) {
+            sb.append(",\"rows\":10,\"cols\":9,\"check\":false,\"endReason\":\"\",\"board\":[");
+            for (int r = 0; r < XiangqiBoard.ROWS; r++) {
+                if (r > 0) {
                     sb.append(',');
                 }
-                sb.append(Board.EMPTY);
+                sb.append('[');
+                for (int c = 0; c < XiangqiBoard.COLS; c++) {
+                    if (c > 0) {
+                        sb.append(',');
+                    }
+                    sb.append(0);
+                }
+                sb.append(']');
+            }
+            sb.append(']');
+        } else {
+            sb.append(",\"size\":15,\"board\":[");
+            for (int r = 0; r < 15; r++) {
+                if (r > 0) {
+                    sb.append(',');
+                }
+                sb.append('[');
+                for (int c = 0; c < 15; c++) {
+                    if (c > 0) {
+                        sb.append(',');
+                    }
+                    sb.append(0);
+                }
+                sb.append(']');
             }
             sb.append(']');
         }
-        sb.append(']');
+        sb.append('}');
+        return sb.toString();
     }
-
     private static int readBoardSize(String body) {
         Integer size = Json.getInt(body, "size");
         int boardSize = (size == null) ? 15 : size;
@@ -316,7 +491,7 @@ public class GomokuServer {
         return boardSize;
     }
 
-    private static int[] readMove(String body) {
+    private static int[] readGomokuMove(String body) {
         Integer r = Json.getInt(body, "r");
         Integer c = Json.getInt(body, "c");
         if (r == null || c == null) {
@@ -325,8 +500,33 @@ public class GomokuServer {
         return new int[]{r, c};
     }
 
-    private static PvpRoom requireRoom(Session session) {
-        PvpRoom room = session.roomCode == null ? null : ROOMS.get(session.roomCode);
+    private static int[] readXiangqiMove(String body) {
+        Integer fr = Json.getInt(body, "fr");
+        Integer fc = Json.getInt(body, "fc");
+        Integer tr = Json.getInt(body, "tr");
+        Integer tc = Json.getInt(body, "tc");
+        if (fr == null || fc == null || tr == null || tc == null) {
+            throw new IllegalArgumentException("缺少走子坐标 fr / fc / tr / tc");
+        }
+        return new int[]{fr, fc, tr, tc};
+    }
+
+    private static int intOr(String body, String key, int fallback) {
+        Integer value = Json.getInt(body, key);
+        return value == null ? fallback : value;
+    }
+
+    private static void validateTime(int minutes, int increment) {
+        if (minutes < 0 || minutes > 60) {
+            throw new IllegalArgumentException("时限只支持 0~60 分钟（0 = 不限时）");
+        }
+        if (increment < 0 || increment > 60) {
+            throw new IllegalArgumentException("加秒只支持 0~60 秒");
+        }
+    }
+
+    private static Room requireRoom(Session session) {
+        Room room = session.roomCode == null ? null : ROOMS.get(session.roomCode);
         if (room == null) {
             session.roomCode = null;
             throw new IllegalArgumentException("你还没有加入房间");
@@ -340,7 +540,7 @@ public class GomokuServer {
         if (code == null) {
             return;
         }
-        PvpRoom room = ROOMS.get(code);
+        Room room = ROOMS.get(code);
         if (room != null) {
             room.leave(session.id);
             if (room.isEmpty()) {
@@ -358,9 +558,38 @@ public class GomokuServer {
         return code.toString();
     }
 
+    private static void cleanup() {
+        long cutoff = System.currentTimeMillis() - SESSION_TTL_MILLIS;
+        SESSIONS.entrySet().removeIf(entry -> entry.getValue().lastSeen < cutoff);
+        ROOMS.entrySet().removeIf(entry -> entry.getValue().idleMillis() > SESSION_TTL_MILLIS);
+    }
+
+    private static void respondJson(HttpExchange exchange, int code, String json) throws IOException {
+        byte[] body = json.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        addCors(exchange);
+        exchange.sendResponseHeaders(code, body.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(body);
+        }
+    }
+
+    private static void addCors(HttpExchange exchange) {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+    }
+
+    private static String readBody(HttpExchange exchange) throws IOException {
+        try (InputStream in = exchange.getRequestBody()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
     /**
      * 从 Cookie 中找回会话；没有 Cookie 就发一个新的。
-     * Cookie 只保存随机 ID，真正的棋局在服务器的 map 里。
+     * Cookie 名字沿用 gomoku_sid，保证老用户升级后不会丢失身份。
      */
     private static Session sessionOf(HttpExchange exchange) {
         String id = cookieValue(exchange, COOKIE_NAME);
@@ -387,39 +616,12 @@ public class GomokuServer {
         return null;
     }
 
-    private static void cleanup() {
-        long cutoff = System.currentTimeMillis() - SESSION_TTL_MILLIS;
-        SESSIONS.entrySet().removeIf(entry -> entry.getValue().lastSeen < cutoff);
-        ROOMS.entrySet().removeIf(entry -> entry.getValue().idleMillis() > SESSION_TTL_MILLIS);
-    }
-
-    private static void respondJson(HttpExchange exchange, int code, String json) throws IOException {
-        byte[] body = json.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        addCors(exchange);
-        exchange.sendResponseHeaders(code, body.length);
-        try (OutputStream out = exchange.getResponseBody()) {
-            out.write(body);
-        }
-    }
-
-    private static void addCors(HttpExchange exchange) {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-    }
-
-    private static String readBody(HttpExchange exchange) throws IOException {
-        try (InputStream in = exchange.getRequestBody()) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
-    }
-
-    /** 一个浏览器身份对应的数据。solo 是它的私人棋局。 */
+    /** 一个浏览器身份对应的数据。 */
     private static final class Session {
         private final String id;
-        private final Game solo = new Game(15);
-        private volatile String mode = "solo";
+        private final Game gomokuSolo = new Game(15);
+        private final XiangqiSolo xiangqiSolo = new XiangqiSolo();
+        private volatile String currentGame = "lobby";
         private volatile String roomCode;
         private volatile long lastSeen = System.currentTimeMillis();
 
@@ -428,7 +630,6 @@ public class GomokuServer {
         }
     }
 
-    /** 负责把 web 目录下的静态文件发送给浏览器。 */
     private static class StaticHandler implements HttpHandler {
 
         private final Path root;
@@ -446,7 +647,6 @@ public class GomokuServer {
                 }
 
                 Path file = root.resolve(path.substring(1)).normalize();
-                // 防止有人用 "../" 读到 web 目录之外的文件
                 if (!file.startsWith(root) || !Files.isRegularFile(file)) {
                     byte[] body = "404 Not Found".getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
@@ -459,6 +659,7 @@ public class GomokuServer {
 
                 byte[] body = Files.readAllBytes(file);
                 exchange.getResponseHeaders().set("Content-Type", contentType(file));
+                exchange.getResponseHeaders().set("Cache-Control", "no-cache");
                 exchange.sendResponseHeaders(200, body.length);
                 try (OutputStream out = exchange.getResponseBody()) {
                     out.write(body);

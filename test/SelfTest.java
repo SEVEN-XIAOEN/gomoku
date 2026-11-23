@@ -128,51 +128,51 @@ public class SelfTest {
     // ------------------------------------------------------------------ 双人联机
 
     private static void testPvpAssignsColors() {
-        PvpRoom room = new PvpRoom("ABC123", 15);
-        room.join("black-player");
-        room.join("white-player");
+        GomokuRoom room = new GomokuRoom("ABC123", 15, 0, 0);
+        room.join("black-player", 0);
+        room.join("white-player", 0);
         check("先加入房间的人执黑，后加入的人执白",
-                room.colorOf("black-player") == Board.BLACK
-                        && room.colorOf("white-player") == Board.WHITE);
+                room.seatOf("black-player") == Board.BLACK
+                        && room.seatOf("white-player") == Board.WHITE);
     }
 
     private static void testPvpRejectsOutOfTurn() {
-        PvpRoom room = new PvpRoom("ABC123", 15);
-        room.join("black-player");
-        room.join("white-player");
+        GomokuRoom room = new GomokuRoom("ABC123", 15, 0, 0);
+        room.join("black-player", 0);
+        room.join("white-player", 0);
         check("双人模式不能替对手落子",
-                throwsIllegalArgument(() -> room.move("white-player", 7, 7)));
+                throwsIllegalArgument(() -> room.move("white-player", 7, 7, 0, 0)));
     }
 
     private static void testPvpDetectsWin() {
-        PvpRoom room = new PvpRoom("ABC123", 15);
-        room.join("black-player");
-        room.join("white-player");
+        GomokuRoom room = new GomokuRoom("ABC123", 15, 0, 0);
+        room.join("black-player", 0);
+        room.join("white-player", 0);
         for (int c = 3; c <= 6; c++) {
-            room.move("black-player", 7, c);
-            room.move("white-player", 0, c - 3);
+            room.move("black-player", 7, c, 0, 0);
+            room.move("white-player", 0, c - 3, 0, 0);
         }
-        room.move("black-player", 7, 7);
-        String json = room.toJson("black-player");
+        room.move("black-player", 7, 7, 0, 0);
+        String json = room.stateJson("black-player");
         check("双人模式能判定五连获胜", json.contains("\"status\":\"black_win\""));
     }
 
     private static void testPvpUndoOwnLastMove() {
-        PvpRoom room = new PvpRoom("ABC123", 15);
-        room.join("black-player");
-        room.join("white-player");
-        room.move("black-player", 7, 7);
+        GomokuRoom room = new GomokuRoom("ABC123", 15, 0, 0);
+        room.join("black-player", 0);
+        room.join("white-player", 0);
+        room.move("black-player", 7, 7, 0, 0);
         room.undo("black-player");
-        String json = room.toJson("black-player");
+        String json = room.stateJson("black-player");
         check("双人模式可以撤回自己刚下的最后一手",
                 json.contains("\"moves\":0") && json.contains("\"turn\":1"));
     }
 
     private static void testPvpRejectsThirdPlayer() {
-        PvpRoom room = new PvpRoom("ABC123", 15);
-        room.join("black-player");
-        room.join("white-player");
-        check("双人房间满员后拒绝第三名玩家", !room.join("third-player"));
+        GomokuRoom room = new GomokuRoom("ABC123", 15, 0, 0);
+        room.join("black-player", 0);
+        room.join("white-player", 0);
+        check("双人房间满员后拒绝第三名玩家", !room.join("third-player", 0));
     }
 
     // ------------------------------------------------------------------ 小工具
