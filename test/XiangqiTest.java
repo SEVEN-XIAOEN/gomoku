@@ -29,6 +29,8 @@ public class XiangqiTest {
         testThreefoldRepetition();
         testNaturalLimitMath();
         testInsufficientMaterial();
+        testMateInOneDetection();
+        testMateHintClearsAndRestores();
         testAiProducesLegalMove();
         testRoomFlow();
         testCaptureBookkeeping();
@@ -238,6 +240,47 @@ public class XiangqiTest {
         check("还有兵时不算无取胜可能", !XiangqiRules.insufficientMaterial(b));
     }
 
+    private static void testMateInOneDetection() {
+        XiangqiBoard b = emptyBoard();
+        b.set(0, 4, XiangqiBoard.piece(XiangqiBoard.BLACK, XiangqiBoard.KING));
+        b.set(9, 3, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.KING));
+        b.set(1, 5, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.PAWN));
+        b.set(2, 0, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.ROOK));
+        check("一步杀：车平底线可形成将死", XiangqiRules.hasWinningMoveInOne(b, XiangqiBoard.RED));
+
+        XiangqiBoard s = emptyBoard();
+        s.set(0, 3, XiangqiBoard.piece(XiangqiBoard.BLACK, XiangqiBoard.KING));
+        s.set(9, 4, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.KING));
+        s.set(1, 0, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.ROOK));
+        s.set(2, 2, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.ROOK));
+        check("一步困毙也计入一手杀", XiangqiRules.hasWinningMoveInOne(s, XiangqiBoard.RED));
+
+        check("普通局面不会被误报为一步杀",
+                !XiangqiRules.hasWinningMoveInOne(new XiangqiBoard(), XiangqiBoard.RED));
+    }
+
+    private static void testMateHintClearsAndRestores() {
+        XiangqiMatch match = new XiangqiMatch();
+        XiangqiBoard board = match.board();
+        for (int r = 0; r < XiangqiBoard.ROWS; r++) {
+            for (int c = 0; c < XiangqiBoard.COLS; c++) {
+                board.set(r, c, XiangqiBoard.EMPTY);
+            }
+        }
+        board.set(0, 4, XiangqiBoard.piece(XiangqiBoard.BLACK, XiangqiBoard.KING));
+        board.set(9, 3, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.KING));
+        board.set(1, 5, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.PAWN));
+        board.set(2, 0, XiangqiBoard.piece(XiangqiBoard.RED, XiangqiBoard.ROOK));
+
+        match.move(2, 0, 0, 0);
+        check("走出一手杀后对局结束并清空提示",
+                match.status() == XiangqiMatch.FINISHED && !match.mateInOne() && match.mateFor() == 0);
+        match.undoLast();
+        check("悔棋回到一手杀局面时提示恢复",
+                match.status() == XiangqiMatch.PLAYING && match.mateInOne()
+                        && match.mateFor() == XiangqiBoard.RED);
+    }
+
     private static void testAiProducesLegalMove() {
         XiangqiMatch match = new XiangqiMatch();
         int[] m = new XiangqiAI().chooseMove(match.board(), XiangqiBoard.RED, 1);
@@ -258,6 +301,8 @@ public class XiangqiTest {
         check("象棋联机走子后切换轮次", json.contains("\"turn\":2") && json.contains("\"moves\":1"));
         check("象棋联机状态带中文棋谱", json.contains("炮二平五"));
         check("象棋联机状态带对手在线标记", json.contains("\"opponentOnline\":true"));
+        check("象棋联机状态带一步杀字段",
+                json.contains("\"mateInOne\":false") && json.contains("\"mateFor\":0"));
 
         check("象棋联机不能替对手申请悔棋",
                 throwsIllegalArgument(() -> room.undo("black-player")));
@@ -321,6 +366,7 @@ public class XiangqiTest {
         String after = solo.toJson();
         check("象棋人机局玩家走子后电脑自动应手",
                 after.contains("\"moves\":2") && after.contains("\"turn\":1"));
+        check("象棋人机状态带一步杀字段", after.contains("\"mateInOne\":false"));
 
         solo.undo();
         String undone = solo.toJson();

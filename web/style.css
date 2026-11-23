@@ -1327,3 +1327,169 @@ select {
         font-size: 11.5px;
     }
 }
+
+/* ------------------------------ 象棋终局弹窗与一手杀 ------------------------------ */
+
+.game-alert[data-tone="mate"] {
+    color: #714300;
+    background: linear-gradient(135deg, #fff4cd, #fbe6a8);
+    border-color: rgba(190, 126, 18, 0.55);
+    animation: mate-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes mate-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(190, 126, 18, 0);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(190, 126, 18, 0.13);
+    }
+}
+
+.result-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(31, 25, 17, 0.46);
+    backdrop-filter: blur(3px);
+    animation: result-fade 0.16s ease both;
+}
+
+.result-card {
+    width: min(440px, 100%);
+    padding: 28px 28px 24px;
+    border: 1px solid rgba(107, 90, 51, 0.18);
+    border-radius: 22px;
+    text-align: center;
+    background: var(--card);
+    box-shadow: 0 34px 80px rgba(28, 20, 10, 0.38);
+    animation: result-pop 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+}
+
+.result-card--win {
+    border-color: rgba(187, 130, 32, 0.38);
+    background:
+        radial-gradient(circle at 50% 0%, rgba(255, 218, 125, 0.46), transparent 56%),
+        #fffaf0;
+}
+
+.result-card--lose {
+    border-color: rgba(91, 116, 130, 0.26);
+    background:
+        radial-gradient(circle at 50% 0%, rgba(184, 205, 216, 0.28), transparent 58%),
+        #f7fafb;
+}
+
+.result-card--draw {
+    border-color: rgba(125, 113, 88, 0.24);
+    background:
+        radial-gradient(circle at 50% 0%, rgba(220, 210, 190, 0.34), transparent 58%),
+        #fffdf8;
+}
+
+.result-card__eyebrow {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--ink-soft);
+}
+
+.result-card h3 {
+    margin: 0;
+    font-size: 30px;
+    line-height: 1.2;
+    letter-spacing: 0.06em;
+}
+
+.result-card--win h3 {
+    color: #7a4a0b;
+}
+
+.result-card--lose h3 {
+    color: #3f5360;
+}
+
+.result-card--draw h3 {
+    color: #5f5748;
+}
+
+.result-card__sub {
+    margin: 12px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.result-card__detail {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+}
+
+.result-card__hint {
+    margin: 13px 0 0;
+    padding: 8px 11px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: #6b5a33;
+    background: rgba(196, 160, 78, 0.13);
+}
+
+.result-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.result-card__actions .btn {
+    flex: 1 1 108px;
+}
+
+@keyframes result-fade {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes result-pop {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .game-alert[data-tone="mate"],
+    .result-modal,
+    .result-card {
+        animation: none;
+    }
+}
+
+@media (max-width: 520px) {
+    .result-card {
+        padding: 24px 18px 20px;
+        border-radius: 18px;
+    }
+
+    .result-card h3 {
+        font-size: 26px;
+    }
+
+    .result-card__actions .btn {
+        flex-basis: 100%;
+    }
+}

@@ -175,6 +175,8 @@ public class XiangqiSolo {
         sb.append(",\"status\":\"").append(match.statusName()).append('"');
         sb.append(",\"endReason\":\"").append(Json.escape(endReason)).append('"');
         sb.append(",\"check\":").append(match.status() == XiangqiMatch.PLAYING && match.isInCheck());
+        sb.append(",\"mateInOne\":").append(match.mateInOne());
+        sb.append(",\"mateFor\":").append(match.mateFor());
         sb.append(",\"lastMove\":");
         appendMove(sb, match.lastMove());
         sb.append(",\"moves\":").append(match.historySize());

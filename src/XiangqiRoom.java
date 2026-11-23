@@ -174,6 +174,8 @@ public class XiangqiRoom extends Room {
         sb.append(",\"status\":\"").append(statusName()).append('"');
         sb.append(",\"endReason\":\"").append(Json.escape(endReason)).append('"');
         sb.append(",\"check\":").append(status == PLAYING && match.isInCheck());
+        sb.append(",\"mateInOne\":").append(match.mateInOne());
+        sb.append(",\"mateFor\":").append(match.mateFor());
         sb.append(",\"lastMove\":");
         appendMove(sb, match.lastMove());
         sb.append(",\"moves\":").append(match.historySize());

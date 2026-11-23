@@ -384,6 +384,24 @@
     </div>
 </div>
 
+<!-- ------------------------------ 象棋终局弹窗 ------------------------------ -->
+<div id="xiangqi-result-modal" class="result-modal" hidden>
+    <div id="xiangqi-result-card" class="result-card result-card--draw"
+         role="dialog" aria-modal="true" aria-labelledby="xiangqi-result-title"
+         aria-describedby="xiangqi-result-sub">
+        <p class="result-card__eyebrow">中国象棋 · 对局结算</p>
+        <h3 id="xiangqi-result-title">对局结束</h3>
+        <p id="xiangqi-result-sub" class="result-card__sub"></p>
+        <p id="xiangqi-result-detail" class="result-card__detail"></p>
+        <p id="xiangqi-result-rematch-hint" class="result-card__hint" hidden></p>
+        <div class="result-card__actions">
+            <button id="xiangqi-result-rematch" class="btn btn--primary" type="button">再来一局</button>
+            <button id="xiangqi-result-close" class="btn" type="button">查看棋盘</button>
+            <button id="xiangqi-result-lobby" class="btn" type="button">返回大厅</button>
+        </div>
+    </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
 <script src="js/core/api.js"></script>

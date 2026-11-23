@@ -27,6 +27,8 @@
     var notationLength = 0;
     var soundEnabled = readSoundPreference();
     var audioContext = null;
+    var resultSignature = '';
+    var mateNoticeKey = '';
 
     function el(id) {
         return document.getElementById(id);
@@ -99,6 +101,15 @@
         els.undoAnswer = el('xiangqi-undo-answer');
         els.undoAccept = el('xiangqi-undo-accept');
         els.undoDecline = el('xiangqi-undo-decline');
+        els.resultModal = el('xiangqi-result-modal');
+        els.resultCard = el('xiangqi-result-card');
+        els.resultTitle = el('xiangqi-result-title');
+        els.resultSub = el('xiangqi-result-sub');
+        els.resultDetail = el('xiangqi-result-detail');
+        els.resultRematch = el('xiangqi-result-rematch');
+        els.resultRematchHint = el('xiangqi-result-rematch-hint');
+        els.resultClose = el('xiangqi-result-close');
+        els.resultLobby = el('xiangqi-result-lobby');
 
         boardView = QP.xiangqiRender.create(els.canvas);
         clockView = QP.ui.createClock({
@@ -163,20 +174,7 @@
             }
         });
 
-        els.newBtn.addEventListener('click', function () {
-            var time = parseTime(els.time.value);
-            run('/api/xiangqi/new', {
-                side: parseInt(els.side.value, 10) || 0,
-                level: parseInt(els.difficulty.value, 10) || 2,
-                minutes: time.minutes,
-                increment: time.increment
-            }, '正在开局…').then(function (data) {
-                if (data) {
-                    clearSelection();
-                    apply(data);
-                }
-            });
-        });
+        els.newBtn.addEventListener('click', startSoloGame);
 
         els.undoBtn.addEventListener('click', function () {
             run('/api/xiangqi/undo', {}, '正在悔棋…').then(function (data) {
@@ -304,6 +302,42 @@
 
         els.copyCodeBtn.addEventListener('click', copyRoomCode);
         els.copyLinkBtn.addEventListener('click', copyInviteLink);
+
+        els.resultRematch.addEventListener('click', requestResultRematch);
+        els.resultClose.addEventListener('click', function () {
+            closeResultModal(true);
+        });
+        els.resultLobby.addEventListener('click', function () {
+            closeResultModal(false);
+            QP.router.go('/lobby');
+        });
+        els.resultModal.addEventListener('click', function (event) {
+            if (event.target === els.resultModal) {
+                closeResultModal(true);
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && els.resultModal && !els.resultModal.hidden) {
+                event.preventDefault();
+                closeResultModal(true);
+            }
+        });
+    }
+
+    function startSoloGame() {
+        var time = parseTime(els.time.value);
+        return run('/api/xiangqi/new', {
+            side: parseInt(els.side.value, 10) || 0,
+            level: parseInt(els.difficulty.value, 10) || 2,
+            minutes: time.minutes,
+            increment: time.increment
+        }, '正在开局…').then(function (data) {
+            if (data) {
+                clearSelection();
+                apply(data);
+            }
+            return data;
+        });
     }
 
     function answerUndo(action) {
@@ -393,6 +427,9 @@
         enterToken++;
         clearSelection();
         hover = null;
+        closeResultModal(false);
+        resultSignature = '';
+        mateNoticeKey = '';
         document.title = '中国象棋 · 棋类对战平台';
     }
 
@@ -441,6 +478,8 @@
         if (prevIdentity !== identityOf(state)) {
             // 换了房间或换了阵营时回到默认视角：黑方自动翻转。
             manualFlip = null;
+            resultSignature = '';
+            mateNoticeKey = '';
         }
 
         var pvp = state.mode === 'pvp';
@@ -483,6 +522,7 @@
         syncOverlay();
         draw();
         updateAlert();
+        syncResultModal();
         updateTitle();
         notifyTransitions(prevStatus, firstLoad);
     }
@@ -610,6 +650,127 @@
         return prefix + (winner === myColor() ? '你赢了！' : '你输了');
     }
 
+    function resultSignatureOf(data) {
+        return [data.mode, data.room || '', data.moves || 0, data.status, data.endReason || ''].join('|');
+    }
+
+    /**
+     * 终局弹窗按“对局签名”去重：轮询到同一盘结束状态只弹一次，
+     * 用户点“查看棋盘”后也不会在下一轮轮询时重新出现。
+     */
+    function syncResultModal() {
+        if (!els.resultModal) {
+            return;
+        }
+        if (!state || state.status === 'playing') {
+            resultSignature = '';
+            closeResultModal(false);
+            return;
+        }
+        var signature = resultSignatureOf(state);
+        if (resultSignature === signature) {
+            if (!els.resultModal.hidden) {
+                updateResultActions();
+            }
+            return;
+        }
+        resultSignature = signature;
+        renderResultModal();
+        els.resultModal.hidden = false;
+        updateResultActions();
+        focusWithoutScroll(els.resultClose);
+    }
+
+    function renderResultModal() {
+        var draw = state.status === 'draw';
+        var winner = state.status === 'red_win' ? 1 : (state.status === 'black_win' ? 2 : 0);
+        var mine = myColor();
+        var won = !draw && winner !== 0 && winner === mine;
+        var tone = draw ? 'draw' : (won ? 'win' : 'lose');
+        var reason = reasonText(state.endReason);
+
+        if (els.resultCard) {
+            els.resultCard.className = 'result-card result-card--' + tone;
+        }
+        QP.ui.setText(els.resultTitle, draw ? '和棋' : (won ? '🏆 胜利！' : (mine ? '本局结束' : '对局结束')));
+
+        var sub = reason;
+        if (!draw && winner) {
+            sub = (sub ? sub + ' · ' : '') + sideName(winner) + '胜';
+        }
+        if (!sub) {
+            sub = draw ? '双方和棋' : '本局结束';
+        }
+        QP.ui.setText(els.resultSub, sub);
+        QP.ui.setText(els.resultDetail, '共 ' + (state.moves || 0) + ' 手');
+    }
+
+    function updateResultActions() {
+        if (!els.resultRematch || !state) {
+            return;
+        }
+        var pvp = state.mode === 'pvp';
+        var mine = myColor();
+        var votes = state.rematchVotes || [];
+        var voted = !!(pvp && mine && votes[mine - 1]);
+        var count = 0;
+        for (var i = 0; i < votes.length; i++) {
+            if (votes[i]) {
+                count++;
+            }
+        }
+
+        els.resultRematch.hidden = pvp && !state.room;
+        QP.ui.setText(els.resultRematch, voted ? '等待对手确认' : '再来一局');
+        QP.ui.setDisabled(els.resultRematch, busy || voted);
+
+        if (pvp && count > 0) {
+            els.resultRematchHint.hidden = false;
+            QP.ui.setText(els.resultRematchHint, voted
+                ? '等待对手确认（' + count + '/2）'
+                : '对手已准备（' + count + '/2），点「再来一局」即可开局');
+        } else {
+            els.resultRematchHint.hidden = true;
+        }
+    }
+
+    function requestResultRematch() {
+        if (!state || busy) {
+            return;
+        }
+        if (state.mode === 'pvp') {
+            run('/api/rooms/rematch', {}, '正在准备下一盘…').then(function (data) {
+                if (data) {
+                    clearSelection();
+                    apply(data);
+                }
+            });
+            return;
+        }
+        startSoloGame();
+    }
+
+    function closeResultModal(restoreFocus) {
+        if (!els.resultModal || els.resultModal.hidden) {
+            return;
+        }
+        els.resultModal.hidden = true;
+        if (restoreFocus) {
+            focusWithoutScroll(els.flipBtn);
+        }
+    }
+
+    function focusWithoutScroll(target) {
+        if (!target || !target.focus) {
+            return;
+        }
+        try {
+            target.focus({ preventScroll: true });
+        } catch (error) {
+            target.focus();
+        }
+    }
+
     function updateAlert() {
         if (!els.alert) {
             return;
@@ -623,6 +784,11 @@
         if (state.status !== 'playing') {
             text = resultText();
             toneName = messageTone();
+        } else if (state.mateInOne && state.mateFor) {
+            text = state.mateFor === myColor()
+                ? '你有一手将死机会'
+                : '警告：' + sideName(state.mateFor) + '有一手将死机会';
+            toneName = 'mate';
         } else if (state.check) {
             text = '将军！';
             toneName = 'check';
@@ -1077,8 +1243,12 @@
     function notifyTransitions(prevStatus, firstLoad) {
         var history = state.history || [];
         var grew = !firstLoad && history.length > notationLength;
+        var mateKey = state.status === 'playing' && state.mateInOne && state.mateFor
+            ? String(state.mateFor)
+            : '';
         notationLength = history.length;
         if (firstLoad) {
+            mateNoticeKey = mateKey;
             return;
         }
         if (grew) {
@@ -1094,6 +1264,10 @@
         } else if (grew && state.check) {
             playTone('check', 0.26);
         }
+        if (mateKey && mateKey !== mateNoticeKey) {
+            playTone(state.mateFor === myColor() ? 'mate' : 'mate-warning', 0.27);
+        }
+        mateNoticeKey = mateKey;
     }
 
     function ensureAudio() {
@@ -1155,6 +1329,13 @@
         } else if (kind === 'lose') {
             beep(392, 0.16, volume, 'sine');
             setTimeout(function () { beep(294, 0.24, volume, 'sine'); }, 170);
+        } else if (kind === 'mate') {
+            beep(784, 0.09, volume, 'triangle');
+            setTimeout(function () { beep(1046, 0.09, volume, 'triangle'); }, 95);
+            setTimeout(function () { beep(1318, 0.18, volume, 'triangle'); }, 190);
+        } else if (kind === 'mate-warning') {
+            beep(660, 0.12, volume, 'square');
+            setTimeout(function () { beep(494, 0.18, volume, 'square'); }, 130);
         } else {
             beep(440, 0.18, volume, 'sine');
         }

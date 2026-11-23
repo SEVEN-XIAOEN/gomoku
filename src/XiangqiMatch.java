@@ -22,6 +22,10 @@ public class XiangqiMatch {
     private int status = PLAYING;
     /** 0 = 和棋/未结束，1 = 红胜，2 = 黑胜 */
     private int winner;
+    /** 当前走子方是否已经存在一步直接获胜的着法；仅作提示，胜负仍由 move() 实际结算。 */
+    private boolean mateInOne;
+    /** 拥有一手杀机会的一方：1 = 红，2 = 黑，0 = 无。 */
+    private int mateFor;
     private String endReason = "";
     private String repetitionNote = "";
     private int noCapturePlies;
@@ -42,6 +46,7 @@ public class XiangqiMatch {
         repetitionNote = "";
         noCapturePlies = 0;
         positionCounts.put(key(), 1);
+        refreshMateHint();
     }
 
     public XiangqiBoard board() {
@@ -133,6 +138,28 @@ public class XiangqiMatch {
         return XiangqiRules.inCheck(board, turn);
     }
 
+    public boolean mateInOne() {
+        return mateInOne;
+    }
+
+    public int mateFor() {
+        return mateFor;
+    }
+
+    /** 只在轮到某方时提示“该方有一手杀”，不搜索两步以上的连杀。 */
+    private void refreshMateHint() {
+        clearMateHint();
+        if (status == PLAYING && XiangqiRules.hasWinningMoveInOne(board, turn)) {
+            mateInOne = true;
+            mateFor = turn;
+        }
+    }
+
+    private void clearMateHint() {
+        mateInOne = false;
+        mateFor = 0;
+    }
+
     /**
      * 走一步棋。坐标非法、不是本方棋子、不是本方回合、走后自将都会抛错。
      */
@@ -158,6 +185,7 @@ public class XiangqiMatch {
         String notation = XiangqiNotation.of(board, fr, fc, tr, tc);
         int captured = board.move(fr, fc, tr, tc);
         turn = XiangqiBoard.other(mover);
+        clearMateHint();
 
         boolean gaveCheck = XiangqiRules.inCheck(board, turn);
         boolean chase = !gaveCheck && XiangqiRules.isChase(board, mover, tr, tc);
@@ -181,6 +209,7 @@ public class XiangqiMatch {
 
         if (count >= 3) {
             adjudicateRepetition(k);
+            clearMateHint();
             return;
         }
 
@@ -191,7 +220,9 @@ public class XiangqiMatch {
 
         if (XiangqiRules.insufficientMaterial(board)) {
             finishDraw("insufficient");
+            return;
         }
+        refreshMateHint();
     }
 
     /** 由认输、超时、双方同意和棋等外部原因结束对局。 */
@@ -203,6 +234,7 @@ public class XiangqiMatch {
         winner = winnerColor;
         endReason = reason == null ? "" : reason;
         repetitionNote = "";
+        clearMateHint();
     }
 
     /** 撤销最后一步。返回 false 表示没有可撤的棋。 */
@@ -223,6 +255,7 @@ public class XiangqiMatch {
             positionCounts.computeIfPresent(removed, (k, v) -> v > 1 ? v - 1 : null);
         }
         recomputeNoCapture();
+        refreshMateHint();
         return true;
     }
 
@@ -241,6 +274,7 @@ public class XiangqiMatch {
         status = FINISHED;
         winner = 0;
         endReason = reason;
+        clearMateHint();
     }
 
     private String key() {
@@ -323,6 +357,7 @@ public class XiangqiMatch {
             winner = 0;
             repetitionNote = "三次重复局面，判和";
         }
+        clearMateHint();
     }
 
     public String statusName() {

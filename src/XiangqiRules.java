@@ -420,6 +420,24 @@ public final class XiangqiRules {
         return false;
     }
 
+    /**
+     * 当前走子方是否存在“一步直接获胜”的着法：走完以后对方没有任何合法着法。
+     *
+     * <p>这里同时覆盖将死与困毙。只证明当前这一手能终结对局，不做两步以上的杀棋搜索。
+     * 调用方负责缓存结果，避免每次状态轮询都重复遍历。</p>
+     */
+    public static boolean hasWinningMoveInOne(XiangqiBoard board, int color) {
+        for (int[] m : allLegalMoves(board, color)) {
+            int captured = board.move(m[0], m[1], m[2], m[3]);
+            boolean wins = !hasLegalMove(board, XiangqiBoard.other(color));
+            board.unmove(m[0], m[1], m[2], m[3], captured);
+            if (wins) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static int value(int piece) {
         return switch (XiangqiBoard.type(piece)) {
             case XiangqiBoard.KING -> 10000;
